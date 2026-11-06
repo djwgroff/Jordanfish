@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -46,7 +47,7 @@ func play(input io.Reader) error {
 	repetitions := map[positionKey]int{b.key(): 1}
 	drawOffer := None
 	scanner := bufio.NewScanner(input)
-	fmt.Println("Moves: e2e4, a7a8q. Commands: quit, resign, draw, claim [move].")
+	fmt.Println("Moves: e2e4, a7a8q. Commands: engine [depth], quit, resign, draw, claim [move].")
 	for {
 		displayBoard(b, b.colorToMove)
 		legal := GenerateLegalMoves(b)
@@ -108,7 +109,28 @@ func play(input io.Reader) error {
 			fmt.Println("No threefold repetition or fifty-move draw available.")
 			continue
 		}
-		m, err := findMove(s, legal)
+		var m Move
+		if len(words) > 0 && words[0] == "engine" {
+			depth := 3
+			var depthErr error
+			if len(words) == 2 {
+				depth, depthErr = strconv.Atoi(words[1])
+			}
+			if len(words) > 2 || depthErr != nil || depth < 1 || depth > 6 {
+				fmt.Println("Use engine [depth], with a depth from 1 to 6.")
+				continue
+			}
+			var ok bool
+			m, ok = BestMove(b, depth)
+			if !ok {
+				fmt.Println("No engine move available.")
+				continue
+			}
+			fmt.Println("Engine plays", m)
+			err = nil
+		} else {
+			m, err = findMove(s, legal)
+		}
 		if err != nil {
 			fmt.Println(err)
 			continue

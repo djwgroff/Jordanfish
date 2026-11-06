@@ -6,6 +6,14 @@ import (
 	"strings"
 )
 
+func (m Move) String() string {
+	s := fmt.Sprintf("%c%c%c%c", 'a'+m.from%8, '8'-m.from/8, 'a'+m.to%8, '8'-m.to/8)
+	if m.promotion != None {
+		s += map[Piece]string{Queen: "q", Rook: "r", Bishop: "b", Knight: "n"}[m.promotion]
+	}
+	return s
+}
+
 func coordinateToIndex(coordinate string) (int, error) {
 	if len(coordinate) != 2 || coordinate[0] < 'a' || coordinate[0] > 'h' || coordinate[1] < '1' || coordinate[1] > '8' {
 		return 0, fmt.Errorf("invalid square %q", coordinate)
