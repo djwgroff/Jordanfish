@@ -37,21 +37,12 @@ func BestMove(b Board, depth int) (Move, bool) {
 }
 
 func minimax(b Board, depth, alpha, beta, ply int) (int, Move, bool) {
-	moves := GenerateLegalMoves(b)
-	if len(moves) == 0 {
-		if kingAttacked(b, b.colorToMove) {
-			if b.colorToMove == White {
-				return -mateScore + ply, Move{}, false
-			}
-			return mateScore - ply, Move{}, false
-		}
-		return 0, Move{}, false
-	}
-	if b.insufficientMaterial() || b.halfmove >= 150 {
-		return 0, Move{}, false
-	}
 	if depth == 0 {
-		return evaluate(b), Move{}, false
+		return quiescence(b, alpha, beta, ply, 0), Move{}, false
+	}
+	moves := GenerateLegalMoves(b)
+	if score, finished := terminalScore(b, moves, ply); finished {
+		return score, Move{}, false
 	}
 	orderMoves(b, moves)
 
@@ -81,4 +72,75 @@ func minimax(b Board, depth, alpha, beta, ply int) (int, Move, bool) {
 		}
 	}
 	return bestScore, best, true
+}
+
+func terminalScore(b Board, moves []Move, ply int) (int, bool) {
+	if len(moves) == 0 {
+		if kingAttacked(b, b.colorToMove) {
+			if b.colorToMove == White {
+				return -mateScore + ply, true
+			}
+			return mateScore - ply, true
+		}
+		return 0, true
+	}
+	if b.insufficientMaterial() || b.halfmove >= 150 {
+		return 0, true
+	}
+	return 0, false
+}
+
+const maxQuiescencePly = 16
+
+func quiescence(b Board, alpha, beta, ply, extraPly int) int {
+	moves := GenerateLegalMoves(b)
+	if score, finished := terminalScore(b, moves, ply); finished {
+		return score
+	}
+	standPat := evaluate(b)
+	// cap extensions so checking sequences cannot run indefinitely
+	if extraPly >= maxQuiescencePly {
+		return standPat
+	}
+
+	maximizing := b.colorToMove == White
+	inCheck := kingAttacked(b, b.colorToMove)
+	bestScore := standPat
+	if inCheck {
+		// being in check means we have to search a reply instead of standing pat
+		bestScore = infinity
+		if maximizing {
+			bestScore = -infinity
+		}
+	} else if maximizing {
+		if standPat >= beta {
+			return standPat
+		}
+		alpha = max(alpha, standPat)
+	} else {
+		if standPat <= alpha {
+			return standPat
+		}
+		beta = min(beta, standPat)
+	}
+	orderMoves(b, moves)
+	for _, move := range moves {
+		if !inCheck && b.squares[move.to] == None && !move.isEnPassant && move.promotion == None {
+			continue
+		}
+		next := b
+		next.makeMove(move)
+		score := quiescence(next, alpha, beta, ply+1, extraPly+1)
+		if maximizing {
+			bestScore = max(bestScore, score)
+			alpha = max(alpha, bestScore)
+		} else {
+			bestScore = min(bestScore, score)
+			beta = min(beta, bestScore)
+		}
+		if alpha >= beta {
+			break
+		}
+	}
+	return bestScore
 }

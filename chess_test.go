@@ -293,7 +293,7 @@ func TestTerminal(t *testing.T) {
 	}
 }
 
-// unpruned search used to check alpha beta results
+// unpruned minimax used to check alpha beta results
 func referenceScore(b Board, depth, ply int) int {
 	moves := GenerateLegalMoves(b)
 	if len(moves) == 0 {
@@ -309,7 +309,7 @@ func referenceScore(b Board, depth, ply int) int {
 		return 0
 	}
 	if depth == 0 {
-		return evaluate(b)
+		return quiescence(b, -infinity, infinity, ply, 0)
 	}
 	best := infinity
 	if b.colorToMove == White {
@@ -371,16 +371,19 @@ func TestEngineSearch(t *testing.T) {
 }
 
 func TestEngineTactics(t *testing.T) {
-	for _, tc := range []struct{ fen, want string }{
-		{"7k/8/8/3q4/8/8/8/K2R4 w - - 0 1", "d1d5"},
-		{"k2r4/8/8/8/3Q4/8/8/7K b - - 0 1", "d8d4"},
-		{"7k/P7/8/8/8/8/8/7K w - - 0 1", "a7a8q"},
+	for _, tc := range []struct {
+		fen, want string
+		depth     int
+	}{
+		{"7k/8/8/3q4/8/8/8/K2R4 w - - 0 1", "d1d5", 2},
+		{"k2r4/8/8/8/3Q4/8/8/7K b - - 0 1", "d8d4", 2},
+		{"7k/P7/8/8/8/8/8/7K w - - 0 1", "a7a8q", 1},
 	} {
 		b, err := boardFromFEN(tc.fen)
 		if err != nil {
 			t.Fatal(err)
 		}
-		m, ok := BestMove(b, 2)
+		m, ok := BestMove(b, tc.depth)
 		if !ok || m.String() != tc.want {
 			t.Fatalf("got %v, want %s", m, tc.want)
 		}
@@ -434,8 +437,8 @@ func TestEngineLooksAhead(t *testing.T) {
 	}
 	shallow, _ := BestMove(b, 1)
 	deeper, _ := BestMove(b, 2)
-	if shallow.String() != "e1e5" || deeper.String() == "e1e5" {
-		t.Fatal("deeper search should avoid trading the queen for a protected rook")
+	if shallow.String() == "e1e5" || deeper.String() == "e1e5" {
+		t.Fatal("quiescence should catch the recapture even at depth one")
 	}
 }
 
@@ -650,5 +653,137 @@ func TestUCIInvalidDepth(t *testing.T) {
 	output := uciTranscript(t, input)
 	if strings.Count(output, "info string ") != 7 || strings.Count(output, "bestmove ") != 1 || !strings.Contains(output, "readyok\ninfo depth 1\n") {
 		t.Fatal(output)
+	}
+}
+
+func referenceQuiescence(b Board, ply, extraPly int) int {
+	moves := GenerateLegalMoves(b)
+	if score, done := terminalScore(b, moves, ply); done {
+		return score
+	}
+	best := evaluate(b)
+	if extraPly >= maxQuiescencePly {
+		return best
+	}
+	inCheck := kingAttacked(b, b.colorToMove)
+	if inCheck {
+		best = infinity
+		if b.colorToMove == White {
+			best = -infinity
+		}
+	}
+	for _, m := range moves {
+		if !inCheck && b.squares[m.to] == None && !m.isEnPassant && m.promotion == None {
+			continue
+		}
+		next := b
+		next.makeMove(m)
+		score := referenceQuiescence(next, ply+1, extraPly+1)
+		if b.colorToMove == White {
+			best = max(best, score)
+		} else {
+			best = min(best, score)
+		}
+	}
+	return best
+}
+
+func TestQuiescence(t *testing.T) {
+	for _, fen := range []string{
+		startFEN,
+		"7k/8/8/3q4/8/8/8/K2R4 w - - 0 1",
+		"k2r4/8/8/8/3Q4/8/8/7K b - - 0 1",
+		"7k/8/8/3pP3/8/8/8/7K w - d6 0 1",
+		"7k/P7/8/8/8/8/8/7K w - - 0 1",
+		"1k4r1/8/8/8/8/8/8/R5K1 w - - 0 1",
+	} {
+		b, err := boardFromFEN(fen)
+		if err != nil {
+			t.Fatal(err)
+		}
+		original := b
+		want := referenceQuiescence(b, 0, 0)
+		got := quiescence(b, -infinity, infinity, 0, 0)
+		if got != want {
+			t.Fatalf("%s: got %d want %d", fen, got, want)
+		}
+		if b != original {
+			t.Fatal("quiescence changed board")
+		}
+	}
+}
+
+func TestQuiescenceTactics(t *testing.T) {
+	for _, tc := range []struct {
+		fen   string
+		color Piece
+	}{
+		{"7k/8/8/3q4/8/8/8/K2R4 w - - 0 1", White},
+		{"k2r4/8/8/8/3Q4/8/8/7K b - - 0 1", Black},
+		{"7k/8/8/3pP3/8/8/8/7K w - d6 0 1", White},
+		{"7k/P7/8/8/8/8/8/7K w - - 0 1", White},
+	} {
+		b, err := boardFromFEN(tc.fen)
+		if err != nil {
+			t.Fatal(err)
+		}
+		static := evaluate(b)
+		got := quiescence(b, -infinity, infinity, 0, 0)
+		if tc.color == White && got <= static || tc.color == Black && got >= static {
+			t.Fatalf("missed tactical gain: %s", tc.fen)
+		}
+	}
+}
+
+func TestQuiescenceCheckEvasions(t *testing.T) {
+	b, err := boardFromFEN("1k4r1/8/8/8/8/8/8/R5K1 w - - 0 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range GenerateLegalMoves(b) {
+		if b.squares[m.to] != None || m.isEnPassant || m.promotion != None {
+			t.Fatal("test needs quiet evasions only")
+		}
+	}
+	next := b
+	move, err := findMove("g1h1", GenerateLegalMoves(b))
+	if err != nil {
+		t.Fatal(err)
+	}
+	next.makeMove(move)
+	want := evaluate(next)
+	if want >= evaluate(b) {
+		t.Fatal("test needs a forced positional loss")
+	}
+	for _, window := range [][2]int{{-infinity, infinity}, {-infinity, -5}} {
+		if got := quiescence(b, window[0], window[1], 0, 0); got != want {
+			t.Fatalf("check evasion got %d want %d", got, want)
+		}
+	}
+}
+
+func TestQuiescenceTerminalAndLimit(t *testing.T) {
+	for _, tc := range []struct {
+		fen  string
+		want int
+	}{
+		{"7k/6Q1/5K2/8/8/8/8/8 b - - 0 1", mateScore - 7},
+		{"7k/5K2/6Q1/8/8/8/8/8 b - - 0 1", 0},
+		{"7k/8/8/8/8/8/8/R6K w - - 150 1", 0},
+		{"7k/8/8/8/8/8/8/7K w - - 0 1", 0},
+	} {
+		b, err := boardFromFEN(tc.fen)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, extra := range []int{0, maxQuiescencePly} {
+			if got := quiescence(b, -infinity, infinity, 7, extra); got != tc.want {
+				t.Fatalf("got %d want %d", got, tc.want)
+			}
+		}
+	}
+	b, _ := boardFromFEN("7k/8/8/3q4/8/8/8/K2R4 w - - 0 1")
+	if quiescence(b, -infinity, infinity, 0, maxQuiescencePly) != evaluate(b) {
+		t.Fatal("extension cap not respected")
 	}
 }
