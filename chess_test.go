@@ -971,3 +971,147 @@ func TestIterativeDeepening(t *testing.T) {
 		}
 	}
 }
+
+func BenchmarkGenerateLegalMoves(b *testing.B) {
+	for _, tc := range []struct{ name, fen string }{
+		{"start", startFEN},
+		{"kiwipete", "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1"},
+		{"endgame", "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1"},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
+			board, err := boardFromFEN(tc.fen)
+			if err != nil {
+				b.Fatal(err)
+			}
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				GenerateLegalMoves(board)
+			}
+		})
+	}
+}
+
+func BenchmarkPerft(b *testing.B) {
+	board, err := boardFromFEN(startFEN)
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if Perft(board, 3) != 8902 {
+			b.Fatal("incorrect node count")
+		}
+	}
+}
+
+func referenceSquareAttacked(b Board, square int, by Piece) bool {
+	r, f := square/8, square%8
+	for from, p := range b.squares {
+		if p == None || p.pColor() != by {
+			continue
+		}
+		dr, df := r-from/8, f-from%8
+		switch p.pType() {
+		case Pawn:
+			step := -1
+			if by == Black {
+				step = 1
+			}
+			if dr == step && abs(df) == 1 {
+				return true
+			}
+		case Knight:
+			if abs(dr)*abs(df) == 2 {
+				return true
+			}
+		case King:
+			if abs(dr) <= 1 && abs(df) <= 1 {
+				return true
+			}
+		default:
+			diagonal := abs(dr) == abs(df) && dr != 0
+			straight := (dr == 0) != (df == 0)
+			if !((diagonal && (p.pType() == Bishop || p.pType() == Queen)) || (straight && (p.pType() == Rook || p.pType() == Queen))) {
+				continue
+			}
+			rstep, fstep := 0, 0
+			if dr != 0 {
+				rstep = dr / abs(dr)
+			}
+			if df != 0 {
+				fstep = df / abs(df)
+			}
+			clear := true
+			for rr, ff := from/8+rstep, from%8+fstep; rr != r || ff != f; rr, ff = rr+rstep, ff+fstep {
+				if b.squares[rr*8+ff] != None {
+					clear = false
+					break
+				}
+			}
+			if clear {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func TestMoveGenerationMatchesReference(t *testing.T) {
+	seed := uint32(1)
+	for _, fen := range []string{
+		startFEN,
+		"r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
+		"7k/8/8/3pP3/8/8/8/7K w - d6 0 1",
+		"7k/P7/8/8/8/8/8/7K w - - 0 1",
+	} {
+		board, err := boardFromFEN(fen)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for ply := 0; ply < 64; ply++ {
+			original := board
+			for square := 0; square < 64; square++ {
+				for _, by := range []Piece{White, Black} {
+					if board.squares[square] == by|King {
+						continue
+					}
+					if squareAttacked(board, square, by) != referenceSquareAttacked(board, square, by) {
+						t.Fatalf("attack mismatch at square %d by color %d at ply %d from %s", square, by, ply, fen)
+					}
+				}
+			}
+			var want []Move
+			for _, m := range GenerateMoves(board) {
+				next := board
+				next.makeMove(m)
+				for king, p := range next.squares {
+					if p == board.colorToMove|King {
+						if !referenceSquareAttacked(next, king, opposite(board.colorToMove)) {
+							want = append(want, m)
+						}
+						break
+					}
+				}
+			}
+			got := GenerateLegalMoves(board)
+			if len(got) != len(want) {
+				t.Fatalf("got %d moves want %d at ply %d from %s", len(got), len(want), ply, fen)
+			}
+			for i := range got {
+				if got[i] != want[i] {
+					t.Fatal("legal moves or order changed")
+				}
+			}
+			if board != original {
+				t.Fatal("move generation changed board")
+			}
+			if len(got) == 0 {
+				break
+			}
+			seed = seed*1664525 + 1013904223
+			board.makeMove(got[int(seed)%len(got)])
+		}
+	}
+}

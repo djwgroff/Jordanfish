@@ -67,11 +67,26 @@ func (b *Board) makeMove(m Move) Board {
 }
 
 func GenerateLegalMoves(b Board) []Move {
-	var legal []Move
-	for _, m := range GenerateMoves(b) {
+	kingSquare := -1
+	for square, p := range b.squares {
+		if p == b.colorToMove|King {
+			kingSquare = square
+			break
+		}
+	}
+	if kingSquare < 0 {
+		return nil
+	}
+	moves := GenerateMoves(b)
+	legal := moves[:0]
+	for _, m := range moves {
 		next := b
 		next.makeMove(m)
-		if !kingAttacked(next, b.colorToMove) {
+		target := kingSquare
+		if m.from == kingSquare {
+			target = m.to
+		}
+		if !squareAttacked(next, target, opposite(b.colorToMove)) {
 			legal = append(legal, m)
 		}
 	}
@@ -90,51 +105,33 @@ func kingAttacked(b Board, color Piece) bool {
 // pinned pieces still attack squares even when they cannot move
 func squareAttacked(b Board, square int, by Piece) bool {
 	r, f := square/8, square%8
-	for from, p := range b.squares {
-		if p == None || p.pColor() != by {
-			continue
+	pawnRank := r + 1
+	if by == Black {
+		pawnRank = r - 1
+	}
+	for _, df := range []int{-1, 1} {
+		if onBoard(pawnRank, f+df) && b.squares[pawnRank*8+f+df] == by|Pawn {
+			return true
 		}
-		dr, df := r-from/8, f-from%8
-		switch p.pType() {
-		case Pawn:
-			step := -1
-			if by == Black {
-				step = 1
-			}
-			if dr == step && abs(df) == 1 {
-				return true
-			}
-		case Knight:
-			if abs(dr)*abs(df) == 2 {
-				return true
-			}
-		case King:
-			if abs(dr) <= 1 && abs(df) <= 1 {
-				return true
-			}
-		default:
-			diagonal := abs(dr) == abs(df) && dr != 0
-			straight := (dr == 0) != (df == 0)
-			if !((diagonal && (p.pType() == Bishop || p.pType() == Queen)) || (straight && (p.pType() == Rook || p.pType() == Queen))) {
+	}
+	for _, d := range knightSteps {
+		rr, ff := r+d[0], f+d[1]
+		if onBoard(rr, ff) && b.squares[rr*8+ff] == by|Knight {
+			return true
+		}
+	}
+	for i, d := range directions {
+		for rr, ff := r+d[0], f+d[1]; onBoard(rr, ff); rr, ff = rr+d[0], ff+d[1] {
+			p := b.squares[rr*8+ff]
+			if p == None {
 				continue
 			}
-			rstep, fstep := 0, 0
-			if dr != 0 {
-				rstep = dr / abs(dr)
-			}
-			if df != 0 {
-				fstep = df / abs(df)
-			}
-			clear := true
-			for rr, ff := from/8+rstep, from%8+fstep; rr != r || ff != f; rr, ff = rr+rstep, ff+fstep {
-				if b.squares[rr*8+ff] != None {
-					clear = false
-					break
-				}
-			}
-			if clear {
+			if p.pColor() == by && (p.pType() == Queen ||
+				i < 4 && p.pType() == Rook || i >= 4 && p.pType() == Bishop ||
+				p.pType() == King && abs(rr-r) <= 1 && abs(ff-f) <= 1) {
 				return true
 			}
+			break
 		}
 	}
 	return false
@@ -218,7 +215,7 @@ func castleMoves(b Board, from int) []Move {
 	if b.colorToMove == Black {
 		home, kingSide, queenSide = 4, blackKingSide, blackQueenSide
 	}
-	if from != home || kingAttacked(b, b.colorToMove) {
+	if b.castling&(kingSide|queenSide) == 0 || from != home || squareAttacked(b, home, opposite(b.colorToMove)) {
 		return nil
 	}
 	var moves []Move
@@ -242,7 +239,7 @@ func castleMoves(b Board, from int) []Move {
 		// move the king off its starting square before checking the transit square
 		transit := b
 		transit.makeMove(Move{from: home, to: home + c.step})
-		if !kingAttacked(transit, b.colorToMove) {
+		if !squareAttacked(transit, home+c.step, opposite(b.colorToMove)) {
 			moves = append(moves, Move{from: home, to: home + 2*c.step})
 		}
 	}
