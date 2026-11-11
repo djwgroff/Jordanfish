@@ -787,3 +787,146 @@ func TestQuiescenceTerminalAndLimit(t *testing.T) {
 		t.Fatal("extension cap not respected")
 	}
 }
+
+func TestTranspositionScores(t *testing.T) {
+	for _, fen := range []string{
+		startFEN,
+		"7k/8/8/3q4/8/8/8/K2R4 w - - 0 1",
+		"k2r4/8/8/8/3Q4/8/8/7K b - - 0 1",
+		"7k/8/5KQ1/8/8/8/8/8 w - - 0 1",
+	} {
+		b, err := boardFromFEN(fen)
+		if err != nil {
+			t.Fatal(err)
+		}
+		original := b
+		want, _, wantOK := search(b, 3, -infinity, infinity, 0, nil)
+		table := make(transpositionTable)
+		search(b, 1, -infinity, infinity, 0, table)
+		got, move, ok := search(b, 3, -infinity, infinity, 0, table)
+		if got != want || ok != wantOK {
+			t.Fatalf("cached search got %d want %d for %s", got, want, fen)
+		}
+		if entry, exists := table[tableKey(b)]; !exists || entry.depth != 3 || entry.bound != exactScore {
+			t.Fatal("root result not cached")
+		}
+		again, cachedMove, _ := search(b, 3, -infinity, infinity, 0, table)
+		if again != got || cachedMove != move {
+			t.Fatal("cached result changed")
+		}
+		next := b
+		next.makeMove(move)
+		if referenceScore(next, 2, 1) != want {
+			t.Fatal("cached move does not achieve best score")
+		}
+		if b != original {
+			t.Fatal("search changed board")
+		}
+	}
+}
+
+func TestTranspositionBounds(t *testing.T) {
+	b, err := boardFromFEN(startFEN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _, _ := search(b, 3, -infinity, infinity, 0, nil)
+	for _, tc := range []struct {
+		alpha, beta int
+		bound       scoreBound
+	}{
+		{want - 2, want - 1, lowerBound},
+		{want + 1, want + 2, upperBound},
+	} {
+		table := make(transpositionTable)
+		score, _, _ := search(b, 3, tc.alpha, tc.beta, 0, table)
+		if table[tableKey(b)].bound != tc.bound {
+			t.Fatal("incorrect bound flag")
+		}
+		if tc.bound == lowerBound && score < tc.beta || tc.bound == upperBound && score > tc.alpha {
+			t.Fatal("incorrect cutoff bound")
+		}
+		got, _, _ := search(b, 3, -infinity, infinity, 0, table)
+		if got != want {
+			t.Fatalf("bound reused as exact score: got %d want %d", got, want)
+		}
+	}
+}
+
+func TestTranspositionMateDistance(t *testing.T) {
+	for _, fen := range []string{
+		"7k/8/5KQ1/8/8/8/8/8 w - - 0 1",
+		"8/8/8/8/8/5kq1/8/7K b - - 0 1",
+	} {
+		b, err := boardFromFEN(fen)
+		if err != nil {
+			t.Fatal(err)
+		}
+		table := make(transpositionTable)
+		score, _, _ := search(b, 2, -infinity, infinity, 0, table)
+		want := mateScore - 1
+		if b.colorToMove == Black {
+			want = -want
+		}
+		if score != want {
+			t.Fatal("missed mate in one")
+		}
+		cached, _, _ := search(b, 2, -infinity, infinity, 5, table)
+		fresh, _, _ := search(b, 2, -infinity, infinity, 5, nil)
+		if cached != fresh {
+			t.Fatal("cached mate distance depends on old root")
+		}
+	}
+}
+
+func TestTranspositionState(t *testing.T) {
+	b, err := boardFromFEN(startFEN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := b
+	other.fullmove++
+	if tableKey(other) != tableKey(b) {
+		t.Fatal("fullmove counter prevents transpositions")
+	}
+	for _, change := range []func(*Board){
+		func(b *Board) { b.colorToMove = Black },
+		func(b *Board) { b.castling = 0 },
+		func(b *Board) { b.enPassant = 20 },
+		func(b *Board) { b.halfmove++ },
+		func(b *Board) { b.squares[48] = None },
+	} {
+		other = b
+		change(&other)
+		if tableKey(other) == tableKey(b) {
+			t.Fatal("distinct search states share a key")
+		}
+	}
+	b, err = boardFromFEN("7k/8/8/8/8/8/8/R6K w - - 0 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	table := make(transpositionTable)
+	search(b, 1, -infinity, infinity, 0, table)
+	b.halfmove = 150
+	score, _, ok := search(b, 1, -infinity, infinity, 0, table)
+	if score != 0 || ok {
+		t.Fatal("cache hid the move count draw")
+	}
+}
+
+func TestTranspositionCapacity(t *testing.T) {
+	table := make(transpositionTable)
+	for i := 0; i < tableCapacity+1; i++ {
+		table.store(Board{halfmove: i}, tableEntry{depth: 2})
+	}
+	if len(table) != tableCapacity {
+		t.Fatal("table exceeded capacity")
+	}
+	key := Board{}
+	table.store(key, tableEntry{depth: 3, score: 10})
+	table.store(key, tableEntry{depth: 1, score: 20})
+	if table[key].score != 10 {
+		t.Fatal("shallower entry replaced deeper result")
+	}
+}

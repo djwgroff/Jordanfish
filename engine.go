@@ -37,14 +37,35 @@ func BestMove(b Board, depth int) (Move, bool) {
 }
 
 func minimax(b Board, depth, alpha, beta, ply int) (int, Move, bool) {
+	return search(b, depth, alpha, beta, ply, make(transpositionTable))
+}
+
+func search(b Board, depth, alpha, beta, ply int, table transpositionTable) (int, Move, bool) {
 	if depth == 0 {
 		return quiescence(b, alpha, beta, ply, 0), Move{}, false
 	}
+	key := tableKey(b)
+	entry, cached := table[key]
+	if cached && entry.depth >= depth {
+		score := scoreFromTable(entry.score, ply)
+		if entry.bound == exactScore || entry.bound == lowerBound && score >= beta || entry.bound == upperBound && score <= alpha {
+			return score, entry.move, true
+		}
+	}
+	originalAlpha, originalBeta := alpha, beta
 	moves := GenerateLegalMoves(b)
 	if score, finished := terminalScore(b, moves, ply); finished {
 		return score, Move{}, false
 	}
 	orderMoves(b, moves)
+	if cached {
+		for i, move := range moves {
+			if move == entry.move {
+				moves[0], moves[i] = moves[i], moves[0]
+				break
+			}
+		}
+	}
 
 	maximizing := b.colorToMove == White
 	bestScore := infinity
@@ -55,7 +76,7 @@ func minimax(b Board, depth, alpha, beta, ply int) (int, Move, bool) {
 	for _, move := range moves {
 		next := b
 		next.makeMove(move)
-		score, _, _ := minimax(next, depth-1, alpha, beta, ply+1)
+		score, _, _ := search(next, depth-1, alpha, beta, ply+1, table)
 		if maximizing {
 			if score > bestScore {
 				bestScore, best = score, move
@@ -71,6 +92,13 @@ func minimax(b Board, depth, alpha, beta, ply int) (int, Move, bool) {
 			break
 		}
 	}
+	bound := exactScore
+	if bestScore <= originalAlpha {
+		bound = upperBound
+	} else if bestScore >= originalBeta {
+		bound = lowerBound
+	}
+	table.store(key, tableEntry{depth, scoreToTable(bestScore, ply), bound, best})
 	return bestScore, best, true
 }
 
