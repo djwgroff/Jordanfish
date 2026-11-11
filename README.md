@@ -1,14 +1,7 @@
 # Jordanfish
 
-A small, two-player terminal chess game written in Go. Requires Go 1.22 or newer;
-no external dependencies.
-
-```sh
-go run .
-```
-
-In the cloud environment, first run `source /workspace/.jordanfish-tools/activate.sh`
-to select the Go compiler.
+A chess engine.
+Uses a recursive minimax search, alpha-beta pruning, and basic move ordering. 
 
 Enter moves as `e2e4`. Use `e1g1` / `e1c1` for White's castling and `e8g8` /
 `e8c8` for Black's. Promotions require a suffix: `q`, `r`, `b`, or `n`, such as
@@ -28,9 +21,3 @@ Commands:
 Checkmate, stalemate, common insufficient-material positions, fivefold repetition,
 and the seventy-five-move rule end the game automatically. Invalid input is
 rejected; end-of-input exits cleanly.
-
-The engine uses material evaluation and minimax with alpha-beta pruning.
-Basic move ordering searches promotions first, then captures ranked by victim
-value and attacker cost, then quiet moves.
-It recognizes checkmate, stalemate, insufficient material, and the seventy-five-move
-rule during search; repetition history and optional draw claims are not searched.
