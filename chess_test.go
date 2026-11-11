@@ -527,7 +527,7 @@ func TestPiecePlacement(t *testing.T) {
 		{Pawn, "e2", "e4"},
 		{Rook, "a1", "a7"},
 		{Queen, "a1", "d4"},
-		{King, "e1", "g1"},
+		{King, "a1", "d4"},
 	} {
 		worse, _ := coordinateToIndex(tc.worse)
 		better, _ := coordinateToIndex(tc.better)
@@ -736,7 +736,7 @@ func TestQuiescenceTactics(t *testing.T) {
 }
 
 func TestQuiescenceCheckEvasions(t *testing.T) {
-	b, err := boardFromFEN("1k4r1/8/8/8/8/8/8/R5K1 w - - 0 1")
+	b, err := boardFromFEN("1k4r1/8/8/8/8/8/5P1P/R4RK1 w - - 0 1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1113,5 +1113,75 @@ func TestMoveGenerationMatchesReference(t *testing.T) {
 			seed = seed*1664525 + 1013904223
 			board.makeMove(got[int(seed)%len(got)])
 		}
+	}
+}
+
+func TestKingPhaseBlend(t *testing.T) {
+	for _, queens := range []int{0, 3, 6, 7} {
+		var before Board
+		before.squares[60], before.squares[4] = White|King, Black|King
+		for i := 0; i < queens; i++ {
+			before.squares[8+i] = White | Queen
+		}
+		after := before
+		after.squares[60], after.squares[27] = None, White|King
+		phase := min(queens*4, 24)
+		startBonus := (pieceSquareTables[King][60]*phase + endgameKingTable[60]*(24-phase)) / 24
+		endBonus := (pieceSquareTables[King][27]*phase + endgameKingTable[27]*(24-phase)) / 24
+		if got := evaluate(after) - evaluate(before); got != endBonus-startBonus {
+			t.Fatalf("phase %d: got %d want %d", phase, got, endBonus-startBonus)
+		}
+		if phase == 0 && evaluate(after) <= evaluate(before) {
+			t.Fatal("endgame king should favor the center")
+		}
+		if phase == 24 && evaluate(after) >= evaluate(before) {
+			t.Fatal("opening king should favor shelter")
+		}
+		var mirroredBefore, mirroredAfter Board
+		for square, p := range before.squares {
+			if p != None {
+				mirroredBefore.squares[square^56] = opposite(p.pColor()) | p.pType()
+			}
+		}
+		for square, p := range after.squares {
+			if p != None {
+				mirroredAfter.squares[square^56] = opposite(p.pColor()) | p.pType()
+			}
+		}
+		if evaluate(mirroredBefore) != -evaluate(before) || evaluate(mirroredAfter) != -evaluate(after) {
+			t.Fatal("king blend is not symmetric")
+		}
+	}
+}
+
+func TestBishopPairBonus(t *testing.T) {
+	for _, color := range []Piece{White, Black} {
+		var b Board
+		sign := 1
+		if color == Black {
+			sign = -1
+		}
+		materialAndSquares := 0
+		for i, square := range []int{58, 61, 42} {
+			target := square
+			if color == Black {
+				target ^= 56
+			}
+			b.squares[target] = color | Bishop
+			materialAndSquares += 330 + pieceSquareTables[Bishop][square]
+			want := materialAndSquares
+			if i >= 1 {
+				want += 30
+			}
+			if got := evaluate(b); got != sign*want {
+				t.Fatalf("%d bishops of color %d: got %d want %d", i+1, color, got, sign*want)
+			}
+		}
+	}
+	var b Board
+	b.squares[58], b.squares[61] = White|Bishop, White|Bishop
+	b.squares[2], b.squares[5] = Black|Bishop, Black|Bishop
+	if evaluate(b) != 0 {
+		t.Fatal("equal bishop pairs should balance")
 	}
 }

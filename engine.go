@@ -1,13 +1,22 @@
 package main
 
 const (
-	mateScore = 1_000_000
-	infinity  = 1_000_000_000
+	mateScore       = 1_000_000
+	infinity        = 1_000_000_000
+	bishopPairBonus = 30
+	openingPhase    = 24
 )
 
 // positive scores favor white
 func evaluate(b Board) int {
 	values := [7]int{0, 0, 100, 320, 330, 500, 900}
+	phaseWeights := [7]int{0, 0, 0, 1, 1, 2, 4}
+	phase := 0
+	for _, p := range b.squares {
+		phase += phaseWeights[p.pType()]
+	}
+	phase = min(phase, openingPhase)
+	whiteBishops, blackBishops := 0, 0
 	score := 0
 	for square, p := range b.squares {
 		if p == None {
@@ -16,12 +25,28 @@ func evaluate(b Board) int {
 		if p.pColor() == Black {
 			square ^= 56 // flip ranks and keep the file
 		}
-		value := values[p.pType()] + pieceSquareTables[p.pType()][square]
+		bonus := pieceSquareTables[p.pType()][square]
+		if p.pType() == King {
+			bonus = (bonus*phase + endgameKingTable[square]*(openingPhase-phase)) / openingPhase
+		}
+		value := values[p.pType()] + bonus
 		if p.pColor() == White {
 			score += value
+			if p.pType() == Bishop {
+				whiteBishops++
+			}
 		} else {
 			score -= value
+			if p.pType() == Bishop {
+				blackBishops++
+			}
 		}
+	}
+	if whiteBishops >= 2 {
+		score += bishopPairBonus
+	}
+	if blackBishops >= 2 {
+		score -= bishopPairBonus
 	}
 	return score
 }

@@ -1,5 +1,16 @@
 package main
 
+var endgameKingTable = [64]int{
+	-40, -30, -20, -20, -20, -20, -30, -40,
+	-30, -10, 0, 0, 0, 0, -10, -30,
+	-20, 0, 10, 15, 15, 10, 0, -20,
+	-20, 0, 15, 30, 30, 15, 0, -20,
+	-20, 0, 15, 30, 30, 15, 0, -20,
+	-20, 0, 10, 15, 15, 10, 0, -20,
+	-30, -10, 0, 0, 0, 0, -10, -30,
+	-40, -30, -20, -20, -20, -20, -30, -40,
+}
+
 // white bonuses from rank eight down to rank one
 // black flips the ranks
 var pieceSquareTables = [7][64]int{
