@@ -12,6 +12,9 @@ A transposition table caches search scores and best moves with up to 65536 entri
 per search. It keeps exact scores and alpha-beta bounds and tries cached moves first.
 Iterative deepening searches each depth up to the requested limit and keeps the
 same table between iterations to improve move ordering.
+Quiet moves are ordered by two killer moves per ply and history scores rewarded
+by depth squared after a cutoff. Both are reset for each search and kept between
+iterations, with cached moves first and promotions and captures ahead of quiet moves.
 
 UCI supports `uci`, `isready`, `ucinewgame`, `position startpos` or `position fen`
 with an optional `moves` list, `setoption name Depth value N`, `go depth N`, and

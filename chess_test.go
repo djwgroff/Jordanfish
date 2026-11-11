@@ -575,7 +575,7 @@ func uciTranscript(t *testing.T, input string) string {
 
 func TestUCIHandshake(t *testing.T) {
 	got := uciTranscript(t, "\nuci\nisready\ndebug on\nstop\nisready\nquit\nuci\n")
-	want := "id name Jordanfish\noption name Depth type spin default 3 min 1 max 64\nuciok\nreadyok\nreadyok\n"
+	want := "id name Jordanfish\noption name Depth type spin default 6 min 1 max 64\nuciok\nreadyok\nreadyok\n"
 	if got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}
@@ -1252,5 +1252,115 @@ func TestPawnPenalties(t *testing.T) {
 	start, _ := boardFromFEN(startFEN)
 	if evaluate(start) != 0 {
 		t.Fatal("starting position should remain balanced")
+	}
+}
+
+func TestKillerAndHistoryUpdates(t *testing.T) {
+	b, err := boardFromFEN(startFEN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, _ := findMove("g1f3", GenerateLegalMoves(b))
+	c, _ := findMove("b1c3", GenerateLegalMoves(b))
+	h := new(moveHeuristics)
+	h.recordCutoff(b, a, 3, 4)
+	h.recordCutoff(b, c, 2, 4)
+	h.recordCutoff(b, c, 2, 4)
+	if h.killers[4] != [2]Move{c, a} || h.killers[3] != [2]Move{} {
+		t.Fatal("killers must be distinct and specific to a ply")
+	}
+	if h.history[0][a.from][a.to] != 9 || h.history[0][c.from][c.to] != 8 || h.history[1][a.from][a.to] != 0 {
+		t.Fatal("history rewards must use depth squared and stay separate by side")
+	}
+	h.recordCutoff(b, a, 1, 4)
+	if h.killers[4] != [2]Move{a, c} {
+		t.Fatal("recent killer was not promoted")
+	}
+	b.colorToMove = Black
+	h.recordCutoff(b, Move{from: 6, to: 21}, 2, 5)
+	if h.history[1][6][21] != 4 || h.history[0][6][21] != 0 {
+		t.Fatal("black history used the wrong side")
+	}
+	b.colorToMove = White
+	h.history[0][a.from][a.to] = historyLimit - 1
+	h.recordCutoff(b, a, 3, 128)
+	if h.history[0][a.from][a.to] != historyLimit {
+		t.Fatal("history should saturate without overflowing")
+	}
+	h.recordCutoff(b, a, 3, 128)
+	if h.history[0][a.from][a.to] != historyLimit {
+		t.Fatal("history exceeded its limit")
+	}
+}
+
+func TestQuietMoveOrdering(t *testing.T) {
+	b, err := boardFromFEN("7k/8/8/1p1q4/4r3/2N5/8/K2R4 w - - 0 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	legal := GenerateLegalMoves(b)
+	get := func(s string) Move {
+		m, err := findMove(s, legal)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return m
+	}
+	h := new(moveHeuristics)
+	h.recordCutoff(b, get("a1b1"), 1, 3)
+	h.recordCutoff(b, get("d1d2"), 1, 3)
+	historyMove := get("d1d3")
+	h.history[0][historyMove.from][historyMove.to] = historyLimit
+	moves := []Move{get("c3a4"), historyMove, get("a1b1"), get("c3d5"), get("d1d2")}
+	h.order(b, moves, 3)
+	for i, want := range []string{"c3d5", "d1d2", "a1b1", "d1d3", "c3a4"} {
+		if moves[i].String() != want {
+			t.Fatalf("got %v", moves)
+		}
+	}
+	h.order(b, moves, 2)
+	if moves[1] != historyMove {
+		t.Fatal("killers leaked to another ply")
+	}
+}
+
+func TestTacticalCutoffsDoNotUpdateHistory(t *testing.T) {
+	for _, tc := range []struct{ fen, move string }{
+		{"7k/8/8/3q4/8/8/8/K2R4 w - - 0 1", "d1d5"},
+		{"7k/8/8/3pP3/8/8/8/7K w - d6 0 1", "e5d6"},
+		{"7k/P7/8/8/8/8/8/7K w - - 0 1", "a7a8q"},
+	} {
+		b, err := boardFromFEN(tc.fen)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m, err := findMove(tc.move, GenerateLegalMoves(b))
+		if err != nil {
+			t.Fatal(err)
+		}
+		h := new(moveHeuristics)
+		h.recordCutoff(b, m, 3, 2)
+		if *h != (moveHeuristics{}) {
+			t.Fatal("tactical cutoff changed quiet move heuristics")
+		}
+	}
+}
+
+func TestSearchRecordsQuietCutoffs(t *testing.T) {
+	for _, color := range []Piece{White, Black} {
+		b, err := boardFromFEN(startFEN)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b.colorToMove = color
+		alpha, beta, side := -infinity, -infinity+1, 0
+		if color == Black {
+			alpha, beta, side = infinity-1, infinity, 1
+		}
+		h := new(moveHeuristics)
+		_, move, ok := searchWithOrdering(b, 1, alpha, beta, 0, nil, h)
+		if !ok || h.killers[0][0] != move || h.history[side][move.from][move.to] != 1 {
+			t.Fatal("search did not record a quiet cutoff")
+		}
 	}
 }

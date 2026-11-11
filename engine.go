@@ -82,9 +82,10 @@ func BestMove(b Board, depth int) (Move, bool) {
 		return Move{}, false
 	}
 	table := make(transpositionTable)
+	heuristics := new(moveHeuristics)
 	var best Move
 	for currentDepth := 1; currentDepth <= depth; currentDepth++ {
-		_, move, ok := search(b, currentDepth, -infinity, infinity, 0, table)
+		_, move, ok := searchWithOrdering(b, currentDepth, -infinity, infinity, 0, table, heuristics)
 		if !ok {
 			return Move{}, false
 		}
@@ -98,6 +99,10 @@ func minimax(b Board, depth, alpha, beta, ply int) (int, Move, bool) {
 }
 
 func search(b Board, depth, alpha, beta, ply int, table transpositionTable) (int, Move, bool) {
+	return searchWithOrdering(b, depth, alpha, beta, ply, table, new(moveHeuristics))
+}
+
+func searchWithOrdering(b Board, depth, alpha, beta, ply int, table transpositionTable, heuristics *moveHeuristics) (int, Move, bool) {
 	if depth == 0 {
 		return quiescence(b, alpha, beta, ply, 0), Move{}, false
 	}
@@ -114,7 +119,7 @@ func search(b Board, depth, alpha, beta, ply int, table transpositionTable) (int
 	if score, finished := terminalScore(b, moves, ply); finished {
 		return score, Move{}, false
 	}
-	orderMoves(b, moves)
+	heuristics.order(b, moves, ply)
 	if cached {
 		for i, move := range moves {
 			if move == entry.move {
@@ -133,7 +138,7 @@ func search(b Board, depth, alpha, beta, ply int, table transpositionTable) (int
 	for _, move := range moves {
 		next := b
 		next.makeMove(move)
-		score, _, _ := search(next, depth-1, alpha, beta, ply+1, table)
+		score, _, _ := searchWithOrdering(next, depth-1, alpha, beta, ply+1, table, heuristics)
 		if maximizing {
 			if score > bestScore {
 				bestScore, best = score, move
@@ -146,6 +151,7 @@ func search(b Board, depth, alpha, beta, ply int, table transpositionTable) (int
 			beta = min(beta, bestScore)
 		}
 		if alpha >= beta {
+			heuristics.recordCutoff(b, move, depth, ply)
 			break
 		}
 	}
