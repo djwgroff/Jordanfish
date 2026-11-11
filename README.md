@@ -4,6 +4,8 @@ A chess engine.
 Uses a recursive minimax search, alpha-beta pruning, basic move ordering, and piece-square tables.
 King evaluation blends shelter in the opening with centralization in the endgame
 based on remaining material. Each side gets a 30 centipawn bonus for a bishop pair.
+Pawn structure costs 10 centipawns per extra pawn on a file and 15 per isolated
+pawn with no friendly pawns on either neighboring file. The penalties can stack.
 Quiescence search extends captures and promotions at the depth limit and searches
 all legal replies when in check, with a safety cap of 16 extra plies.
 A transposition table caches search scores and best moves with up to 65536 entries

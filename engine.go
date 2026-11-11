@@ -1,10 +1,12 @@
 package main
 
 const (
-	mateScore       = 1_000_000
-	infinity        = 1_000_000_000
-	bishopPairBonus = 30
-	openingPhase    = 24
+	mateScore           = 1_000_000
+	infinity            = 1_000_000_000
+	bishopPairBonus     = 30
+	openingPhase        = 24
+	doubledPawnPenalty  = 10
+	isolatedPawnPenalty = 15
 )
 
 // positive scores favor white
@@ -12,8 +14,16 @@ func evaluate(b Board) int {
 	values := [7]int{0, 0, 100, 320, 330, 500, 900}
 	phaseWeights := [7]int{0, 0, 0, 1, 1, 2, 4}
 	phase := 0
-	for _, p := range b.squares {
+	var pawns [2][8]int
+	for square, p := range b.squares {
 		phase += phaseWeights[p.pType()]
+		if p.pType() == Pawn {
+			side := 0
+			if p.pColor() == Black {
+				side = 1
+			}
+			pawns[side][square%8]++
+		}
 	}
 	phase = min(phase, openingPhase)
 	whiteBishops, blackBishops := 0, 0
@@ -48,7 +58,21 @@ func evaluate(b Board) int {
 	if blackBishops >= 2 {
 		score -= bishopPairBonus
 	}
-	return score
+	return score - pawnPenalty(pawns[0]) + pawnPenalty(pawns[1])
+}
+
+func pawnPenalty(files [8]int) int {
+	penalty := 0
+	for file, count := range files {
+		if count == 0 {
+			continue
+		}
+		penalty += (count - 1) * doubledPawnPenalty
+		if (file == 0 || files[file-1] == 0) && (file == 7 || files[file+1] == 0) {
+			penalty += count * isolatedPawnPenalty
+		}
+	}
+	return penalty
 }
 
 // returns no move for an invalid depth or a finished position

@@ -1185,3 +1185,72 @@ func TestBishopPairBonus(t *testing.T) {
 		t.Fatal("equal bishop pairs should balance")
 	}
 }
+
+func TestPawnPenalties(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		squares []string
+		penalty int
+	}{
+		{"no pawns", nil, 0},
+		{"isolated", []string{"d4"}, 15},
+		{"connected", []string{"d4", "e2"}, 0},
+		{"doubled isolated", []string{"d4", "d3"}, 40},
+		{"tripled isolated", []string{"d4", "d3", "d2"}, 65},
+		{"doubled supported", []string{"d4", "d3", "e2"}, 10},
+		{"tripled supported", []string{"d4", "d3", "d2", "e2"}, 20},
+		{"edge isolated", []string{"a4"}, 15},
+		{"edge supported", []string{"a4", "b2"}, 0},
+		{"edges do not connect", []string{"a4", "h4"}, 30},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, color := range []Piece{White, Black} {
+				var b Board
+				raw := 0
+				for _, s := range tc.squares {
+					square, err := coordinateToIndex(s)
+					if err != nil {
+						t.Fatal(err)
+					}
+					raw += 100 + pieceSquareTables[Pawn][square]
+					if color == Black {
+						square ^= 56
+					}
+					b.squares[square] = color | Pawn
+				}
+				original := b
+				want := raw - tc.penalty
+				if color == Black {
+					want = -want
+				}
+				if got := evaluate(b); got != want {
+					t.Fatalf("color %d: got %d want %d", color, got, want)
+				}
+				if b != original {
+					t.Fatal("evaluation changed board")
+				}
+			}
+		})
+	}
+	var b Board
+	raw := 0
+	for _, tc := range []struct {
+		square string
+		color  Piece
+	}{{"d4", White}, {"e5", Black}, {"f5", Black}} {
+		square, _ := coordinateToIndex(tc.square)
+		b.squares[square] = tc.color | Pawn
+		if tc.color == White {
+			raw += 100 + pieceSquareTables[Pawn][square]
+		} else {
+			raw -= 100 + pieceSquareTables[Pawn][square^56]
+		}
+	}
+	if got := evaluate(b); got != raw-15 {
+		t.Fatal("enemy pawns should not prevent isolation")
+	}
+	start, _ := boardFromFEN(startFEN)
+	if evaluate(start) != 0 {
+		t.Fatal("starting position should remain balanced")
+	}
+}
