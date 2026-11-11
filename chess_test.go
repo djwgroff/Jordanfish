@@ -1212,7 +1212,8 @@ func TestPawnPenalties(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					raw += 100 + pieceSquareTables[Pawn][square]
+					passed := [8]int{0, 100, 60, 35, 20, 10, 5, 0}
+					raw += 100 + pieceSquareTables[Pawn][square] + passed[square/8]
 					if color == Black {
 						square ^= 56
 					}
@@ -1244,6 +1245,9 @@ func TestPawnPenalties(t *testing.T) {
 			raw += 100 + pieceSquareTables[Pawn][square]
 		} else {
 			raw -= 100 + pieceSquareTables[Pawn][square^56]
+			if tc.square == "f5" {
+				raw -= 20
+			}
 		}
 	}
 	if got := evaluate(b); got != raw-15 {
@@ -1362,5 +1366,77 @@ func TestSearchRecordsQuietCutoffs(t *testing.T) {
 		if !ok || h.killers[0][0] != move || h.history[side][move.from][move.to] != 1 {
 			t.Fatal("search did not record a quiet cutoff")
 		}
+	}
+}
+
+func TestPassedPawnBonuses(t *testing.T) {
+	for _, tc := range []struct {
+		square  string
+		enemies []string
+		want    int
+	}{
+		{"e2", nil, 5},
+		{"e3", nil, 10},
+		{"e4", nil, 20},
+		{"e5", nil, 35},
+		{"e6", nil, 60},
+		{"e7", nil, 100},
+		{"e4", []string{"e6"}, 0},
+		{"e4", []string{"d6"}, 0},
+		{"e4", []string{"f5"}, 0},
+		{"e4", []string{"g6"}, 20},
+		{"e4", []string{"e3"}, 20},
+		{"e4", []string{"d4"}, 20},
+		{"a4", []string{"b5"}, 0},
+		{"h4", []string{"g5"}, 0},
+		{"a4", []string{"h5"}, 20},
+		{"h4", []string{"a5"}, 20},
+	} {
+		for _, color := range []Piece{White, Black} {
+			square, err := coordinateToIndex(tc.square)
+			if err != nil {
+				t.Fatal(err)
+			}
+			side := 0
+			if color == Black {
+				side = 1
+				square ^= 56
+			}
+			var ranks [2][8]uint8
+			ranks[side][square%8] |= 1 << (square / 8)
+			for _, s := range tc.enemies {
+				enemySquare, err := coordinateToIndex(s)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if color == Black {
+					enemySquare ^= 56
+				}
+				ranks[1-side][enemySquare%8] |= 1 << (enemySquare / 8)
+			}
+			if got := passedPawnBonus(ranks, square, color); got != tc.want {
+				t.Fatalf("%s vs %v color %d got %d want %d", tc.square, tc.enemies, color, got, tc.want)
+			}
+		}
+	}
+}
+
+func TestPassedPawnEvaluation(t *testing.T) {
+	var white, black Board
+	square, _ := coordinateToIndex("e4")
+	white.squares[square] = White | Pawn
+	black.squares[square^56] = Black | Pawn
+	want := 100 + pieceSquareTables[Pawn][square] + 20 - isolatedPawnPenalty
+	if evaluate(white) != want || evaluate(black) != -want {
+		t.Fatal("passed pawn bonus missing from evaluation")
+	}
+	b, err := boardFromFEN("7k/8/8/8/4P3/8/8/7K w - - 0 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := b
+	evaluate(b)
+	if b != original {
+		t.Fatal("evaluation changed board")
 	}
 }

@@ -15,6 +15,7 @@ func evaluate(b Board) int {
 	phaseWeights := [7]int{0, 0, 0, 1, 1, 2, 4}
 	phase := 0
 	var pawns [2][8]int
+	var pawnRanks [2][8]uint8
 	for square, p := range b.squares {
 		phase += phaseWeights[p.pType()]
 		if p.pType() == Pawn {
@@ -23,6 +24,7 @@ func evaluate(b Board) int {
 				side = 1
 			}
 			pawns[side][square%8]++
+			pawnRanks[side][square%8] |= 1 << (square / 8)
 		}
 	}
 	phase = min(phase, openingPhase)
@@ -32,12 +34,16 @@ func evaluate(b Board) int {
 		if p == None {
 			continue
 		}
+		tableSquare := square
 		if p.pColor() == Black {
-			square ^= 56 // flip ranks and keep the file
+			tableSquare ^= 56 // flip ranks and keep the file
 		}
-		bonus := pieceSquareTables[p.pType()][square]
+		bonus := pieceSquareTables[p.pType()][tableSquare]
+		if p.pType() == Pawn {
+			bonus += passedPawnBonus(pawnRanks, square, p.pColor())
+		}
 		if p.pType() == King {
-			bonus = (bonus*phase + endgameKingTable[square]*(openingPhase-phase)) / openingPhase
+			bonus = (bonus*phase + endgameKingTable[tableSquare]*(openingPhase-phase)) / openingPhase
 		}
 		value := values[p.pType()] + bonus
 		if p.pColor() == White {
@@ -59,6 +65,23 @@ func evaluate(b Board) int {
 		score -= bishopPairBonus
 	}
 	return score - pawnPenalty(pawns[0]) + pawnPenalty(pawns[1])
+}
+
+func passedPawnBonus(pawns [2][8]uint8, square int, color Piece) int {
+	rank, file := square/8, square%8
+	enemy, advance := 1, 7-rank
+	ahead := uint8((1 << rank) - 1)
+	if color == Black {
+		enemy, advance = 0, rank
+		ahead = ^uint8((1 << (rank + 1)) - 1)
+	}
+	for f := max(0, file-1); f <= min(7, file+1); f++ {
+		if pawns[enemy][f]&ahead != 0 {
+			return 0
+		}
+	}
+	bonuses := [8]int{0, 5, 10, 20, 35, 60, 100, 0}
+	return bonuses[advance]
 }
 
 func pawnPenalty(files [8]int) int {
