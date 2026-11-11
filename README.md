@@ -29,6 +29,8 @@ Checkmate, stalemate, common insufficient-material positions, fivefold repetitio
 and the seventy-five-move rule end the game automatically. Invalid input is
 rejected; end-of-input exits cleanly.
 
-The engine uses material evaluation and minimax with alpha-beta pruning only.
+The engine uses material evaluation and minimax with alpha-beta pruning.
+Basic move ordering searches promotions first, then captures ranked by victim
+value and attacker cost, then quiet moves.
 It recognizes checkmate, stalemate, insufficient material, and the seventy-five-move
 rule during search; repetition history and optional draw claims are not searched.

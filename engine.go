@@ -48,6 +48,7 @@ func minimax(b Board, depth, alpha, beta, ply int) (int, Move, bool) {
 	if depth == 0 {
 		return evaluate(b), Move{}, false
 	}
+	orderMoves(b, moves)
 
 	maximizing := b.colorToMove == White
 	bestScore := infinity
