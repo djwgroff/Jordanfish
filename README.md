@@ -3,16 +3,9 @@
 A chess engine.
 Uses a recursive minimax search, alpha-beta pruning, basic move ordering, and piece-square tables.
 
-Build with `go build -o jordanfish .`. The executable defaults to UCI mode. In
-Cute Chess, add it as an engine using the UCI protocol, with no arguments.
-For the terminal game below, run `./jordanfish -cli` or `go run . -cli`.
-
 UCI supports `uci`, `isready`, `ucinewgame`, `position startpos` or `position fen`
 with an optional `moves` list, `setoption name Depth value N`, `go depth N`, and
-`quit`. Depth defaults to 3 and accepts 1–64. Use fixed-depth games in Cute Chess.
-Clock and other search limits are ignored in favor of the configured depth.
-Search runs synchronously, so `stop`, `isready`, and `quit` received during a
-search are only processed after it finishes. There is no pondering or time management.
+`quit`. Depth defaults to 3 and accepts 1–64.
 
 Enter moves as `e2e4`. Use `e1g1` / `e1c1` for White's castling and `e8g8` /
 `e8c8` for Black's. Promotions require a suffix: `q`, `r`, `b`, or `n`, such as
