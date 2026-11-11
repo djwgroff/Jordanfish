@@ -42,7 +42,7 @@ func (b *Board) makeMove(m Move) Board {
 			b.castling &^= blackKingSide | blackQueenSide
 		}
 	}
-	// Moving a rook or capturing it on its home square permanently loses that right.
+
 	for _, c := range []struct {
 		square int
 		right  byte
@@ -87,8 +87,7 @@ func kingAttacked(b Board, color Piece) bool {
 	return true
 }
 
-// Attacks are distinct from moves: pawns attack diagonally, and pinned pieces
-// still attack squares for king movement and castling purposes.
+// pinned pieces still attack squares even when they cannot move
 func squareAttacked(b Board, square int, by Piece) bool {
 	r, f := square/8, square%8
 	for from, p := range b.squares {
@@ -240,7 +239,7 @@ func castleMoves(b Board, from int) []Move {
 		if !clear {
 			continue
 		}
-		// Test the transit square with the king removed from its original square.
+		// move the king off its starting square before checking the transit square
 		transit := b
 		transit.makeMove(Move{from: home, to: home + c.step})
 		if !kingAttacked(transit, b.colorToMove) {

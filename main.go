@@ -136,7 +136,7 @@ func play(input io.Reader) error {
 			continue
 		}
 		if drawOffer != b.colorToMove {
-			drawOffer = None // Playing a move declines the opponent's offer.
+			drawOffer = None
 		}
 		b.makeMove(m)
 		repetitions[b.key()]++

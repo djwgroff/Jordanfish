@@ -5,12 +5,18 @@ const (
 	infinity  = 1_000_000_000
 )
 
-// evaluate scores material from White's perspective, in centipawns.
+// positive scores favor white
 func evaluate(b Board) int {
 	values := [7]int{0, 0, 100, 320, 330, 500, 900}
 	score := 0
-	for _, p := range b.squares {
-		value := values[p.pType()]
+	for square, p := range b.squares {
+		if p == None {
+			continue
+		}
+		if p.pColor() == Black {
+			square ^= 56 // flip ranks and keep the file
+		}
+		value := values[p.pType()] + pieceSquareTables[p.pType()][square]
 		if p.pColor() == White {
 			score += value
 		} else {
@@ -20,9 +26,8 @@ func evaluate(b Board) int {
 	return score
 }
 
-// BestMove searches depth plies with minimax and alpha-beta pruning.
-// It leaves b unchanged and returns false for depth < 1 or a finished position.
-// Repetition history and optional draw claims are not included in the search.
+// returns no move for an invalid depth or a finished position
+// search ignores repetition history and optional draw claims
 func BestMove(b Board, depth int) (Move, bool) {
 	if depth < 1 {
 		return Move{}, false
@@ -40,7 +45,7 @@ func minimax(b Board, depth, alpha, beta, ply int) (int, Move, bool) {
 			}
 			return mateScore - ply, Move{}, false
 		}
-		return 0, Move{}, false // Stalemate.
+		return 0, Move{}, false
 	}
 	if b.insufficientMaterial() || b.halfmove >= 150 {
 		return 0, Move{}, false

@@ -2,9 +2,8 @@ package main
 
 import "sort"
 
-// orderMoves searches promotions and captures first. Captures prefer the most
-// valuable victim, then the least valuable attacker (MVV-LVA). Quiet moves and
-// other ties retain their generation order.
+// promotions first then most valuable victim and least valuable attacker
+// keep the original order for ties
 func orderMoves(b Board, moves []Move) {
 	sort.SliceStable(moves, func(i, j int) bool {
 		return moveOrderScore(b, moves[i]) > moveOrderScore(b, moves[j])
@@ -12,7 +11,7 @@ func orderMoves(b Board, moves []Move) {
 }
 
 func moveOrderScore(b Board, m Move) int {
-	// Relative piece ranks, including the king as the most costly attacker.
+
 	ranks := [7]int{0, 6, 1, 2, 3, 4, 5}
 	victim := b.squares[m.to].pType()
 	if m.isEnPassant {

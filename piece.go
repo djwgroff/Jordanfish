@@ -2,16 +2,16 @@ package main
 
 type Piece byte
 
-const None Piece = 0   // 00000000
-const King Piece = 1   // 00000001
-const Pawn Piece = 2   // 00000010
-const Knight Piece = 3 // 00000011
-const Bishop Piece = 4 // 00000100
-const Rook Piece = 5   // 00000101
-const Queen Piece = 6  // 00000110
+const None Piece = 0
+const King Piece = 1
+const Pawn Piece = 2
+const Knight Piece = 3
+const Bishop Piece = 4
+const Rook Piece = 5
+const Queen Piece = 6
 
-const White Piece = 8  // 00001000	>> 8 / 8 % 2 * 2 - 1
-const Black Piece = 16 // 00010000	>> 16 / 8 % 2 * 2 - 1
+const White Piece = 8
+const Black Piece = 16
 
 var PieceUnicodeMap = map[Piece]string{
 	None: "·",

@@ -1,7 +1,7 @@
 # Jordanfish
 
 A chess engine.
-Uses a recursive minimax search, alpha-beta pruning, and basic move ordering. 
+Uses a recursive minimax search, alpha-beta pruning, basic move ordering, and piece-square tables.
 
 Enter moves as `e2e4`. Use `e1g1` / `e1c1` for White's castling and `e8g8` /
 `e8c8` for Black's. Promotions require a suffix: `q`, `r`, `b`, or `n`, such as

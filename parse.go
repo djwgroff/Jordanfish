@@ -47,7 +47,7 @@ func boardFromFEN(fen string) (Board, error) {
 	b := Board{colorToMove: White, enPassant: -1, fullmove: 1}
 	invalid := func() (Board, error) { return Board{}, fmt.Errorf("invalid FEN") }
 	parts := strings.Fields(fen)
-	// Retain support for the original placement-only input.
+
 	if len(parts) != 1 && len(parts) != 6 {
 		return invalid()
 	}

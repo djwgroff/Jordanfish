@@ -15,7 +15,7 @@ type Board struct {
 	squares     [64]Piece
 	colorToMove Piece
 	castling    byte
-	enPassant   int // -1 when unavailable
+	enPassant   int // negative one means no target
 	halfmove    int
 	fullmove    int
 }
@@ -45,10 +45,9 @@ func displayBoard(board Board, perspective Piece) {
 	}
 }
 
-// The complete previous board is a small, reliable undo record, including captures.
 func (b *Board) unMakeMove(previous Board) { *b = previous }
 
-// Only positions with identical legal possibilities count toward repetition.
+// only a legal en passant capture changes the repetition key
 type positionKey struct {
 	squares   [64]Piece
 	color     Piece
@@ -69,7 +68,7 @@ func (b Board) key() positionKey {
 	return positionKey{b.squares, b.colorToMove, b.castling, ep}
 }
 
-// These material combinations cannot produce checkmate, even with cooperation.
+// neither side can ever checkmate with these pieces
 func (b Board) insufficientMaterial() bool {
 	minors, knights, bishopColor := 0, 0, -1
 	for square, p := range b.squares {
