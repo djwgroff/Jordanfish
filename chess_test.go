@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"io"
 	"os"
 	"strings"
@@ -557,5 +558,97 @@ func TestEngineDevelopsKnight(t *testing.T) {
 		if color == White && after <= before || color == Black && after >= before {
 			t.Fatal("engine did not improve piece placement")
 		}
+	}
+}
+
+func uciTranscript(t *testing.T, input string) string {
+	t.Helper()
+	var output bytes.Buffer
+	if err := runUCI(strings.NewReader(input), &output); err != nil {
+		t.Fatal(err)
+	}
+	return output.String()
+}
+
+func TestUCIHandshake(t *testing.T) {
+	got := uciTranscript(t, "\nuci\nisready\ndebug on\nstop\nisready\nquit\nuci\n")
+	want := "id name Jordanfish\noption name Depth type spin default 3 min 1 max 64\nuciok\nreadyok\nreadyok\n"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	if got := uciTranscript(t, ""); got != "" {
+		t.Fatal("output before handshake")
+	}
+}
+
+func TestUCIPosition(t *testing.T) {
+	for _, tc := range []struct{ command, fen string }{
+		{"startpos moves e2e4 c7c5 g1f3", "rnbqkbnr/pp1ppppp/8/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2"},
+		{"fen r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1 moves e1g1 e8c8", "2kr3r/8/8/8/8/8/8/R4RK1 w - - 2 2"},
+		{"fen 7k/8/8/3pP3/8/8/8/7K w - d6 0 2 moves e5d6", "7k/8/3P4/8/8/8/8/7K b - - 0 2"},
+		{"fen 7k/P7/8/8/8/8/8/7K w - - 0 1 moves a7a8n", "N6k/8/8/8/8/8/8/7K b - - 0 1"},
+	} {
+		got, err := parseUCIPosition(strings.Fields(tc.command))
+		if err != nil {
+			t.Fatal(err)
+		}
+		want, err := boardFromFEN(tc.fen)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != want {
+			t.Fatalf("incorrect position for %s", tc.command)
+		}
+	}
+	for _, command := range []string{"", "bogus", "fen", "fen 8/8/8/8/8/8/8/8 w - - 0 1", "startpos garbage", "startpos moves e7e5", "startpos moves e2e4 e7e5 e2"} {
+		if _, err := parseUCIPosition(strings.Fields(command)); err == nil {
+			t.Fatalf("accepted invalid position %q", command)
+		}
+	}
+}
+
+func TestUCISearch(t *testing.T) {
+	input := "setoption name Depth value 1\nposition fen 7k/8/8/3q4/8/8/8/K2R4 w - - 0 1\ngo\ngo depth 2\nposition startpos moves e2e4 e7e5 nonsense\ngo\nquit\n"
+	output := uciTranscript(t, input)
+	if strings.Count(output, "bestmove d1d5\n") != 3 {
+		t.Fatal(output)
+	}
+	if strings.Count(output, "info depth 1\n") != 2 || strings.Count(output, "info depth 2\n") != 1 {
+		t.Fatal(output)
+	}
+	if !strings.Contains(output, "info string invalid position move nonsense\n") {
+		t.Fatal(output)
+	}
+	for _, fen := range []string{
+		"7k/6Q1/5K2/8/8/8/8/8 b - - 0 1",
+		"7k/5K2/6Q1/8/8/8/8/8 b - - 0 1",
+	} {
+		output = uciTranscript(t, "position fen "+fen+"\ngo depth 1\nquit\n")
+		if !strings.HasSuffix(output, "bestmove 0000\n") {
+			t.Fatal(output)
+		}
+	}
+}
+
+func TestUCINewGame(t *testing.T) {
+	output := uciTranscript(t, "setoption name depth value 1\nposition startpos moves e2e4\nucinewgame\nisready\ngo wtime 100 btime 100\nquit\n")
+	if !strings.HasPrefix(output, "readyok\ninfo depth 1\n") {
+		t.Fatal(output)
+	}
+	b, _ := boardFromFEN(startFEN)
+	words := strings.Fields(output)
+	if len(words) != 6 || words[4] != "bestmove" {
+		t.Fatal(output)
+	}
+	if _, err := findMove(words[5], GenerateLegalMoves(b)); err != nil {
+		t.Fatalf("new game did not reset board: %s", output)
+	}
+}
+
+func TestUCIInvalidDepth(t *testing.T) {
+	input := "setoption name Depth value 1\nsetoption name Depth value 0\nsetoption name Depth value nope\nsetoption name Depth\ngo depth\ngo depth -1\ngo depth 65\ngo depth nope\nisready\ngo\nquit\n"
+	output := uciTranscript(t, input)
+	if strings.Count(output, "info string ") != 7 || strings.Count(output, "bestmove ") != 1 || !strings.Contains(output, "readyok\ninfo depth 1\n") {
+		t.Fatal(output)
 	}
 }

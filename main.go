@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -10,7 +11,15 @@ import (
 )
 
 func main() {
-	if err := play(os.Stdin); err != nil {
+	cli := flag.Bool("cli", false, "play in the terminal instead of using UCI")
+	flag.Parse()
+	var err error
+	if *cli {
+		err = play(os.Stdin)
+	} else {
+		err = runUCI(os.Stdin, os.Stdout)
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
