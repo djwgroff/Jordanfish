@@ -6,6 +6,8 @@ Quiescence search extends captures and promotions at the depth limit and searche
 all legal replies when in check, with a safety cap of 16 extra plies.
 A transposition table caches search scores and best moves with up to 65536 entries
 per search. It keeps exact scores and alpha-beta bounds and tries cached moves first.
+Iterative deepening searches each depth up to the requested limit and keeps the
+same table between iterations to improve move ordering.
 
 UCI supports `uci`, `isready`, `ucinewgame`, `position startpos` or `position fen`
 with an optional `moves` list, `setoption name Depth value N`, `go depth N`, and

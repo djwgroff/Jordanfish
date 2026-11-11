@@ -32,8 +32,16 @@ func BestMove(b Board, depth int) (Move, bool) {
 	if depth < 1 {
 		return Move{}, false
 	}
-	_, move, ok := minimax(b, depth, -infinity, infinity, 0)
-	return move, ok
+	table := make(transpositionTable)
+	var best Move
+	for currentDepth := 1; currentDepth <= depth; currentDepth++ {
+		_, move, ok := search(b, currentDepth, -infinity, infinity, 0, table)
+		if !ok {
+			return Move{}, false
+		}
+		best = move
+	}
+	return best, true
 }
 
 func minimax(b Board, depth, alpha, beta, ply int) (int, Move, bool) {

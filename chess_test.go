@@ -930,3 +930,44 @@ func TestTranspositionCapacity(t *testing.T) {
 		t.Fatal("shallower entry replaced deeper result")
 	}
 }
+
+func TestIterativeDeepening(t *testing.T) {
+	for _, fen := range []string{
+		startFEN,
+		"7k/8/8/3q4/8/8/8/K2R4 w - - 0 1",
+		"k2r4/8/8/8/3Q4/8/8/7K b - - 0 1",
+		"7k/8/3p4/4r3/8/8/8/K3Q3 w - - 0 1",
+		"7k/8/5KQ1/8/8/8/8/8 w - - 0 1",
+		"8/8/8/8/8/5kq1/8/7K b - - 0 1",
+	} {
+		b, err := boardFromFEN(fen)
+		if err != nil {
+			t.Fatal(err)
+		}
+		original := b
+		for depth := 1; depth <= 3; depth++ {
+			move, ok := BestMove(b, depth)
+			if !ok {
+				t.Fatal("iterative search returned no move")
+			}
+			legal := false
+			for _, candidate := range GenerateLegalMoves(b) {
+				if candidate == move {
+					legal = true
+				}
+			}
+			if !legal {
+				t.Fatal("iterative search returned an illegal move")
+			}
+			want := referenceScore(b, depth, 0)
+			next := b
+			next.makeMove(move)
+			if got := referenceScore(next, depth-1, 1); got != want {
+				t.Fatalf("depth %d move %s scores %d want %d for %s", depth, move, got, want, fen)
+			}
+			if b != original {
+				t.Fatal("iterative search changed board")
+			}
+		}
+	}
+}
