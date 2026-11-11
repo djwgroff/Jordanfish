@@ -13,7 +13,7 @@ func runUCI(input io.Reader, output io.Writer) error {
 	if err != nil {
 		return err
 	}
-	depth := 3
+	depth := 6
 	scanner := bufio.NewScanner(input)
 	for scanner.Scan() {
 		words := strings.Fields(scanner.Text())
@@ -23,7 +23,7 @@ func runUCI(input io.Reader, output io.Writer) error {
 		switch words[0] {
 		case "uci":
 			fmt.Fprintln(output, "id name Jordanfish")
-			fmt.Fprintln(output, "option name Depth type spin default 3 min 1 max 64")
+			fmt.Fprintln(output, "option name Depth type spin default 6 min 1 max 64")
 			fmt.Fprintln(output, "uciok")
 		case "isready":
 			fmt.Fprintln(output, "readyok")

@@ -15,7 +15,7 @@ same table between iterations to improve move ordering.
 
 UCI supports `uci`, `isready`, `ucinewgame`, `position startpos` or `position fen`
 with an optional `moves` list, `setoption name Depth value N`, `go depth N`, and
-`quit`. Depth defaults to 3 and accepts 1–64.
+`quit`. Depth defaults to 6 and accepts 1–64.
 
 Enter moves as `e2e4`. Use `e1g1` / `e1c1` for White's castling and `e8g8` /
 `e8c8` for Black's. Promotions require a suffix: `q`, `r`, `b`, or `n`, such as

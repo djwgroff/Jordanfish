@@ -120,7 +120,7 @@ func play(input io.Reader) error {
 		}
 		var m Move
 		if len(words) > 0 && words[0] == "engine" {
-			depth := 3
+			depth := 6
 			var depthErr error
 			if len(words) == 2 {
 				depth, depthErr = strconv.Atoi(words[1])
