@@ -1,22 +1,7 @@
 # Jordanfish
 
 A chess engine.
-Uses a recursive minimax search, alpha-beta pruning, basic move ordering, and piece-square tables.
-King evaluation blends shelter in the opening with centralization in the endgame
-based on remaining material. Each side gets a 30 centipawn bonus for a bishop pair.
-Pawn structure costs 10 centipawns per extra pawn on a file and 15 per isolated
-pawn with no friendly pawns on either neighboring file. The penalties can stack.
-Passed pawns have no enemy pawns ahead on their own or neighboring files and earn
-5 to 100 centipawns as they advance from their starting rank toward promotion.
-Quiescence search extends captures and promotions at the depth limit and searches
-all legal replies when in check, with a safety cap of 16 extra plies.
-A transposition table caches search scores and best moves with up to 65536 entries
-per search. It keeps exact scores and alpha-beta bounds and tries cached moves first.
-Iterative deepening searches each depth up to the requested limit and keeps the
-same table between iterations to improve move ordering.
-Quiet moves are ordered by two killer moves per ply and history scores rewarded
-by depth squared after a cutoff. Both are reset for each search and kept between
-iterations, with cached moves first and promotions and captures ahead of quiet moves.
+Uses minimax search with alpha-beta pruning to find the best moves. Includes move ordering, position evaluation, and caching to improve search efficiency. Iterative deepening progressively searches deeper to improve move ordering.
 
 UCI supports `uci`, `isready`, `ucinewgame`, `position startpos` or `position fen`
 with an optional `moves` list, `setoption name Depth value N`, `go depth N`, and
