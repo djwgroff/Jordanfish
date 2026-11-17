@@ -1811,3 +1811,140 @@ func BenchmarkBufferedMoveGeneration(b *testing.B) {
 		buffers.generate(board, 0, false)
 	}
 }
+
+func TestPinnedPieces(t *testing.T) {
+	for _, tc := range []struct {
+		fen    string
+		pinned []string
+	}{
+		{"k3r3/8/8/8/8/8/4R3/4K3 w - - 0 1", []string{"e2"}},
+		{"k7/8/7b/8/8/8/3B4/2K5 w - - 0 1", []string{"d2"}},
+		{"k7/8/7q/8/8/8/3N4/2K5 w - - 0 1", []string{"d2"}},
+		{"k7/8/7r/8/8/8/3B4/2K5 w - - 0 1", nil},
+		{"k3r3/8/8/8/8/4P3/4R3/4K3 w - - 0 1", nil},
+		{"k3r3/8/8/8/8/4p3/4R3/4K3 w - - 0 1", nil},
+		{"k3r3/8/8/8/8/8/4N3/4K3 w - - 0 1", []string{"e2"}},
+		{"k2rr3/4P3/8/8/8/8/8/4K3 w - - 0 1", []string{"e7"}},
+	} {
+		b, err := boardFromFEN(tc.fen)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, color := range []Piece{White, Black} {
+			board := b
+			var want [64]bool
+			if color == Black {
+				board = Board{colorToMove: Black, enPassant: -1}
+				for square, p := range b.squares {
+					if p != None {
+						board.squares[square^56] = opposite(p.pColor()) | p.pType()
+					}
+				}
+			}
+			for _, s := range tc.pinned {
+				square, _ := coordinateToIndex(s)
+				if color == Black {
+					square ^= 56
+				}
+				want[square] = true
+			}
+			if got := pinnedPieces(board, findKing(board, color)); got != want {
+				t.Fatalf("incorrect pins for %s color %d", tc.fen, color)
+			}
+		}
+	}
+}
+
+func TestPinnedMoveLegality(t *testing.T) {
+	for _, tc := range []struct {
+		fen            string
+		legal, illegal []string
+	}{
+		{"k3r3/8/8/8/8/8/4R3/4K3 w - - 0 1", []string{"e2e3", "e2e8"}, []string{"e2d2"}},
+		{"k7/8/7b/8/8/8/3B4/2K5 w - - 0 1", []string{"d2e3", "d2h6"}, []string{"d2c3"}},
+		{"k3r3/8/8/8/8/3b4/4P3/4K3 w - - 0 1", []string{"e2e3", "e2e4"}, []string{"e2d3"}},
+		{"k2rr3/4P3/8/8/8/8/8/4K3 w - - 0 1", nil, []string{"e7d8q", "e7d8n"}},
+		{"7k/8/8/r4pPK/8/8/8/8 w - f6 0 1", []string{"g5g6"}, []string{"g5f6"}},
+	} {
+		b, err := boardFromFEN(tc.fen)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, s := range tc.legal {
+			if !hasMove(b, s) {
+				t.Fatalf("rejected legal move %s from %s", s, tc.fen)
+			}
+		}
+		for _, s := range tc.illegal {
+			if hasMove(b, s) {
+				t.Fatalf("accepted illegal move %s from %s", s, tc.fen)
+			}
+		}
+	}
+	b, err := boardFromFEN("k3r3/8/8/8/1b6/8/8/4K2R w - - 0 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	king := findKing(b, White)
+	moves := GenerateLegalMoves(b)
+	if len(moves) == 0 {
+		t.Fatal("test needs a legal escape")
+	}
+	for _, m := range moves {
+		if m.from != king {
+			t.Fatal("non king move escaped double check")
+		}
+	}
+}
+
+func TestFastLegalityMatchesFullChecks(t *testing.T) {
+	seed := uint32(19)
+	for _, fen := range []string{
+		startFEN,
+		"r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
+		"8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1",
+		"7k/8/8/r4pPK/8/8/8/8 w - f6 0 1",
+	} {
+		for game := 0; game < 4; game++ {
+			b, err := boardFromFEN(fen)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for ply := 0; ply < 96; ply++ {
+				original := b
+				king := findKing(b, b.colorToMove)
+				var all []Move
+				for _, m := range GenerateMoves(b) {
+					if legalMove(b, m, king) {
+						all = append(all, m)
+					}
+				}
+				for _, tactical := range []bool{false, true} {
+					var want []Move
+					for _, m := range all {
+						if !tactical || !isQuietMove(b, m) {
+							want = append(want, m)
+						}
+					}
+					got := generateLegalMoves(b, tactical, nil)
+					if len(got) != len(want) {
+						t.Fatalf("got %d moves want %d at ply %d from %s", len(got), len(want), ply, fen)
+					}
+					for i := range got {
+						if got[i] != want[i] {
+							t.Fatal("fast legality changed move order or legality")
+						}
+					}
+				}
+				if b != original {
+					t.Fatal("legality check changed board")
+				}
+				if len(all) == 0 {
+					break
+				}
+				seed = seed*1664525 + 1013904223
+				b.makeMove(all[int(seed)%len(all)])
+			}
+		}
+	}
+}

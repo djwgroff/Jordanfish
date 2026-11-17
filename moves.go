@@ -92,15 +92,51 @@ func legalMove(b Board, m Move, kingSquare int) bool {
 	return !squareAttacked(b, kingSquare, b.colorToMove)
 }
 
+func pinnedPieces(b Board, kingSquare int) [64]bool {
+	var pinned [64]bool
+	r, f := kingSquare/8, kingSquare%8
+	for i, d := range directions {
+		candidate := -1
+		for rr, ff := r+d[0], f+d[1]; onBoard(rr, ff); rr, ff = rr+d[0], ff+d[1] {
+			square := rr*8 + ff
+			p := b.squares[square]
+			if p == None {
+				continue
+			}
+			if p.pColor() == b.colorToMove {
+				if candidate >= 0 {
+					break
+				}
+				candidate = square
+				continue
+			}
+			if candidate >= 0 && (p.pType() == Queen || i < 4 && p.pType() == Rook || i >= 4 && p.pType() == Bishop) {
+				pinned[candidate] = true
+			}
+			break
+		}
+	}
+	return pinned
+}
+
 func generateLegalMoves(b Board, tacticalOnly bool, buffer []Move) []Move {
 	kingSquare := findKing(b, b.colorToMove)
 	if kingSquare < 0 {
 		return buffer[:0]
 	}
 	moves := collectMoves(b, tacticalOnly, buffer)
+	if len(moves) == 0 {
+		return moves
+	}
+	inCheck := squareAttacked(b, kingSquare, opposite(b.colorToMove))
+	var pinned [64]bool
+	if !inCheck {
+		pinned = pinnedPieces(b, kingSquare)
+	}
 	legal := moves[:0]
 	for _, m := range moves {
-		if legalMove(b, m, kingSquare) {
+		needsCheck := inCheck || m.from == kingSquare || pinned[m.from] || m.isEnPassant
+		if !needsCheck || legalMove(b, m, kingSquare) {
 			legal = append(legal, m)
 		}
 	}
