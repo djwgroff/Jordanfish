@@ -67,39 +67,65 @@ func (b *Board) makeMove(m Move) Board {
 }
 
 func GenerateLegalMoves(b Board) []Move {
-	kingSquare := -1
+	return generateLegalMoves(b, false)
+}
+
+// captures and promotions without quiet moves
+func GenerateLegalTacticalMoves(b Board) []Move {
+	return generateLegalMoves(b, true)
+}
+
+func findKing(b Board, color Piece) int {
 	for square, p := range b.squares {
-		if p == b.colorToMove|King {
-			kingSquare = square
-			break
+		if p == color|King {
+			return square
 		}
 	}
+	return -1
+}
+
+func legalMove(b Board, m Move, kingSquare int) bool {
+	b.makeMove(m)
+	if m.from == kingSquare {
+		kingSquare = m.to
+	}
+	return !squareAttacked(b, kingSquare, b.colorToMove)
+}
+
+func generateLegalMoves(b Board, tacticalOnly bool) []Move {
+	kingSquare := findKing(b, b.colorToMove)
 	if kingSquare < 0 {
 		return nil
 	}
-	moves := GenerateMoves(b)
+	moves := collectMoves(b, tacticalOnly)
 	legal := moves[:0]
 	for _, m := range moves {
-		next := b
-		next.makeMove(m)
-		target := kingSquare
-		if m.from == kingSquare {
-			target = m.to
-		}
-		if !squareAttacked(next, target, opposite(b.colorToMove)) {
+		if legalMove(b, m, kingSquare) {
 			legal = append(legal, m)
 		}
 	}
 	return legal
 }
 
-func kingAttacked(b Board, color Piece) bool {
-	for square, p := range b.squares {
-		if p == color|King {
-			return squareAttacked(b, square, opposite(color))
-		}
+func hasLegalMove(b Board) bool {
+	kingSquare := findKing(b, b.colorToMove)
+	if kingSquare < 0 {
+		return false
 	}
-	return true
+	found := false
+	visitMoves(b, false, func(m Move) bool {
+		found = legalMove(b, m, kingSquare)
+		return found
+	})
+	return found
+}
+
+func kingAttacked(b Board, color Piece) bool {
+	square := findKing(b, color)
+	if square < 0 {
+		return true
+	}
+	return squareAttacked(b, square, opposite(color))
 }
 
 // pinned pieces still attack squares even when they cannot move
@@ -138,20 +164,35 @@ func squareAttacked(b Board, square int, by Piece) bool {
 }
 
 func GenerateMoves(b Board) []Move {
+	return collectMoves(b, false)
+}
+
+func collectMoves(b Board, tacticalOnly bool) []Move {
 	var moves []Move
+	visitMoves(b, tacticalOnly, func(m Move) bool {
+		moves = append(moves, m)
+		return false
+	})
+	return moves
+}
+
+// returning true from visit stops generation early
+func visitMoves(b Board, tacticalOnly bool, visit func(Move) bool) {
 	for from, p := range b.squares {
 		if p == None || p.pColor() != b.colorToMove {
 			continue
 		}
 		r, f := from/8, from%8
-		add := func(to int, ep bool) {
+		add := func(to int, ep bool) bool {
 			if p.pType() == Pawn && (to/8 == 0 || to/8 == 7) {
 				for _, promotion := range []Piece{Queen, Rook, Bishop, Knight} {
-					moves = append(moves, Move{from, to, promotion, ep})
+					if visit(Move{from, to, promotion, ep}) {
+						return true
+					}
 				}
-			} else {
-				moves = append(moves, Move{from: from, to: to, isEnPassant: ep})
+				return false
 			}
+			return visit(Move{from: from, to: to, isEnPassant: ep})
 		}
 		if p.pType() == Pawn {
 			step, start := -1, 6
@@ -162,10 +203,14 @@ func GenerateMoves(b Board) []Move {
 				continue
 			}
 			to := (r+step)*8 + f
-			if b.squares[to] == None {
-				add(to, false)
-				if r == start && b.squares[to+step*8] == None {
-					add(to+step*8, false)
+			if b.squares[to] == None && (!tacticalOnly || to/8 == 0 || to/8 == 7) {
+				if add(to, false) {
+					return
+				}
+				if !tacticalOnly && r == start && b.squares[to+step*8] == None {
+					if add(to+step*8, false) {
+						return
+					}
 				}
 			}
 			for _, df := range []int{-1, 1} {
@@ -175,10 +220,14 @@ func GenerateMoves(b Board) []Move {
 				target := to + df
 				q := b.squares[target]
 				if q != None && q.pColor() != p.pColor() && q.pType() != King {
-					add(target, false)
+					if add(target, false) {
+						return
+					}
 				}
 				if target == b.enPassant && q == None && b.squares[r*8+f+df] == opposite(p.pColor())|Pawn {
-					add(target, true)
+					if add(target, true) {
+						return
+					}
 				}
 			}
 			continue
@@ -197,17 +246,24 @@ func GenerateMoves(b Board) []Move {
 				if q.pColor() == p.pColor() || q.pType() == King {
 					break
 				}
-				add(to, false)
+				if !tacticalOnly || q != None {
+					if add(to, false) {
+						return
+					}
+				}
 				if q != None || !p.isSlidingPiece() {
 					break
 				}
 			}
 		}
-		if p.pType() == King {
-			moves = append(moves, castleMoves(b, from)...)
+		if !tacticalOnly && p.pType() == King {
+			for _, m := range castleMoves(b, from) {
+				if visit(m) {
+					return
+				}
+			}
 		}
 	}
-	return moves
 }
 
 func castleMoves(b Board, from int) []Move {

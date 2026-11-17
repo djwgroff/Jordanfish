@@ -1584,3 +1584,109 @@ func TestUCIStatisticsPerIteration(t *testing.T) {
 		t.Fatal(output)
 	}
 }
+
+func TestTacticalMoveGeneration(t *testing.T) {
+	seed := uint32(7)
+	for _, fen := range []string{
+		startFEN,
+		"r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
+		"7k/8/8/3pP3/8/8/8/7K w - d6 0 1",
+		"7k/8/8/r4pPK/8/8/8/8 w - f6 0 1",
+		"r6k/1P6/8/8/8/8/8/7K w - - 0 1",
+		"7k/8/8/8/8/8/1p6/R6K b - - 0 1",
+		"1k4r1/8/8/8/8/8/5P1P/R4RK1 w - - 0 1",
+		"k3r3/8/8/8/8/8/n3R3/4K3 w - - 0 1",
+		"r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1",
+	} {
+		b, err := boardFromFEN(fen)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for ply := 0; ply < 64; ply++ {
+			original := b
+			all := GenerateLegalMoves(b)
+			var want []Move
+			for _, m := range all {
+				if !isQuietMove(b, m) {
+					want = append(want, m)
+				}
+			}
+			got := GenerateLegalTacticalMoves(b)
+			if len(got) != len(want) {
+				t.Fatalf("got %d tactical moves want %d from %s at ply %d", len(got), len(want), fen, ply)
+			}
+			for i := range got {
+				if got[i] != want[i] {
+					t.Fatal("tactical moves or order changed")
+				}
+			}
+			if hasLegalMove(b) != (len(all) > 0) {
+				t.Fatal("legal move existence check disagrees with full generation")
+			}
+			if b != original {
+				t.Fatal("generation changed board")
+			}
+			if len(all) == 0 {
+				break
+			}
+			seed = seed*1664525 + 1013904223
+			b.makeMove(all[int(seed)%len(all)])
+		}
+	}
+}
+
+func TestTacticalPromotions(t *testing.T) {
+	for _, fen := range []string{
+		"r6k/1P6/8/8/8/8/8/7K w - - 0 1",
+		"7k/8/8/8/8/8/1p6/R6K b - - 0 1",
+	} {
+		b, err := boardFromFEN(fen)
+		if err != nil {
+			t.Fatal(err)
+		}
+		moves := GenerateLegalTacticalMoves(b)
+		if len(moves) != 8 {
+			t.Fatalf("expected four capture and four quiet promotions got %v", moves)
+		}
+		counts := map[Piece]int{}
+		for _, m := range moves {
+			counts[m.promotion]++
+		}
+		for _, p := range []Piece{Queen, Rook, Bishop, Knight} {
+			if counts[p] != 2 {
+				t.Fatal("missing promotion choice")
+			}
+		}
+	}
+}
+
+func TestTacticalStalemate(t *testing.T) {
+	for _, fen := range []string{
+		"7k/5K2/6Q1/8/8/8/8/8 b - - 0 1",
+		"8/8/8/8/8/6q1/5k2/7K w - - 0 1",
+	} {
+		b, err := boardFromFEN(fen)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if hasLegalMove(b) {
+			t.Fatal("stalemate has a legal move")
+		}
+		for _, window := range [][2]int{{-infinity, infinity}, {-2000, -1000}, {1000, 2000}} {
+			for _, extra := range []int{0, maxQuiescencePly} {
+				if quiescence(b, window[0], window[1], 0, extra) != 0 {
+					t.Fatal("stalemate was evaluated as a stand pat score")
+				}
+			}
+		}
+	}
+	b, _ := boardFromFEN(startFEN)
+	if len(GenerateLegalTacticalMoves(b)) != 0 || !hasLegalMove(b) {
+		t.Fatal("quiet position mistaken for stalemate")
+	}
+	calls := 0
+	visitMoves(b, false, func(Move) bool { calls++; return true })
+	if calls != 1 {
+		t.Fatal("move generation did not stop on first match")
+	}
+}

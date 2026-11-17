@@ -237,9 +237,21 @@ func quiescenceWithStats(b Board, alpha, beta, ply, extraPly int, stats *SearchI
 	if stats != nil {
 		stats.Nodes++
 	}
-	moves := GenerateLegalMoves(b)
-	if score, finished := terminalScore(b, moves, ply); finished {
-		return score
+	inCheck := kingAttacked(b, b.colorToMove)
+	var moves []Move
+	if inCheck {
+		moves = GenerateLegalMoves(b)
+		if score, finished := terminalScore(b, moves, ply); finished {
+			return score
+		}
+	} else {
+		if b.insufficientMaterial() || b.halfmove >= 150 {
+			return 0
+		}
+		moves = GenerateLegalTacticalMoves(b)
+		if len(moves) == 0 && !hasLegalMove(b) {
+			return 0
+		}
 	}
 	standPat := evaluate(b)
 	// cap extensions so checking sequences cannot run indefinitely
@@ -248,7 +260,6 @@ func quiescenceWithStats(b Board, alpha, beta, ply, extraPly int, stats *SearchI
 	}
 
 	maximizing := b.colorToMove == White
-	inCheck := kingAttacked(b, b.colorToMove)
 	bestScore := standPat
 	if inCheck {
 		// being in check means we have to search a reply instead of standing pat
@@ -269,9 +280,6 @@ func quiescenceWithStats(b Board, alpha, beta, ply, extraPly int, stats *SearchI
 	}
 	orderMoves(b, moves)
 	for _, move := range moves {
-		if !inCheck && b.squares[move.to] == None && !move.isEnPassant && move.promotion == None {
-			continue
-		}
 		next := b
 		next.makeMove(move)
 		score := quiescenceWithStats(next, alpha, beta, ply+1, extraPly+1, stats)
