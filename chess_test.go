@@ -1457,8 +1457,14 @@ func TestSearchStatistics(t *testing.T) {
 		}
 		previousNodes, previousTime := uint64(0), time.Duration(0)
 		for i, info := range reports {
-			if info.Depth != i+1 || info.Nodes <= previousNodes || info.Elapsed < previousTime || info.Elapsed <= 0 {
-				t.Fatal("incorrect depth or cumulative counters")
+			if info.Depth != i+1 {
+				t.Fatalf("got depth %d want %d", info.Depth, i+1)
+			}
+			if info.Nodes <= previousNodes {
+				t.Fatalf("node count did not increase from %d to %d", previousNodes, info.Nodes)
+			}
+			if info.Elapsed < previousTime {
+				t.Fatalf("elapsed time decreased from %v to %v", previousTime, info.Elapsed)
 			}
 			if len(info.PV) < 1 || len(info.PV) > info.Depth {
 				t.Fatal("invalid pv length")
