@@ -67,12 +67,12 @@ func (b *Board) makeMove(m Move) Board {
 }
 
 func GenerateLegalMoves(b Board) []Move {
-	return generateLegalMoves(b, false)
+	return generateLegalMoves(b, false, nil)
 }
 
 // captures and promotions without quiet moves
 func GenerateLegalTacticalMoves(b Board) []Move {
-	return generateLegalMoves(b, true)
+	return generateLegalMoves(b, true, nil)
 }
 
 func findKing(b Board, color Piece) int {
@@ -92,12 +92,12 @@ func legalMove(b Board, m Move, kingSquare int) bool {
 	return !squareAttacked(b, kingSquare, b.colorToMove)
 }
 
-func generateLegalMoves(b Board, tacticalOnly bool) []Move {
+func generateLegalMoves(b Board, tacticalOnly bool, buffer []Move) []Move {
 	kingSquare := findKing(b, b.colorToMove)
 	if kingSquare < 0 {
-		return nil
+		return buffer[:0]
 	}
-	moves := collectMoves(b, tacticalOnly)
+	moves := collectMoves(b, tacticalOnly, buffer)
 	legal := moves[:0]
 	for _, m := range moves {
 		if legalMove(b, m, kingSquare) {
@@ -164,11 +164,11 @@ func squareAttacked(b Board, square int, by Piece) bool {
 }
 
 func GenerateMoves(b Board) []Move {
-	return collectMoves(b, false)
+	return collectMoves(b, false, nil)
 }
 
-func collectMoves(b Board, tacticalOnly bool) []Move {
-	var moves []Move
+func collectMoves(b Board, tacticalOnly bool, buffer []Move) []Move {
+	moves := buffer[:0]
 	visitMoves(b, tacticalOnly, func(m Move) bool {
 		moves = append(moves, m)
 		return false

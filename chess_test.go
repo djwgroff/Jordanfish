@@ -1690,3 +1690,124 @@ func TestTacticalStalemate(t *testing.T) {
 		t.Fatal("move generation did not stop on first match")
 	}
 }
+
+func TestMoveBufferReuse(t *testing.T) {
+	large, err := boardFromFEN("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	buffers := &moveBuffers{plies: [][]Move{make([]Move, 0, 1)}}
+	moves := buffers.generate(large, 0, false)
+	want := GenerateLegalMoves(large)
+	if len(moves) != len(want) {
+		t.Fatal("buffer growth lost moves")
+	}
+	storage := &moves[0]
+	for i := range moves {
+		if moves[i] != want[i] {
+			t.Fatal("buffered move order changed")
+		}
+	}
+	b, _ := boardFromFEN(startFEN)
+	moves = buffers.generate(b, 0, false)
+	if &moves[0] != storage {
+		t.Fatal("buffer storage was not reused")
+	}
+	if len(buffers.generate(b, 0, true)) != 0 {
+		t.Fatal("quiet position retained stale tactical moves")
+	}
+	moves = buffers.generate(b, 0, false)
+	if len(moves) != 20 || &moves[0] != storage {
+		t.Fatal("empty generation discarded storage or retained stale moves")
+	}
+}
+
+func TestMoveBufferIsolation(t *testing.T) {
+	b, _ := boardFromFEN(startFEN)
+	buffers := new(moveBuffers)
+	parent := buffers.generate(b, 0, false)
+	snapshot := append([]Move(nil), parent...)
+	child := b
+	child.makeMove(parent[0])
+	buffers.generate(child, 1, false)
+	buffers.generate(child, 128, false)
+	for i := range parent {
+		if parent[i] != snapshot[i] {
+			t.Fatal("child generation overwrote parent moves")
+		}
+	}
+	independent := new(moveBuffers)
+	other := independent.generate(b, 0, false)
+	other[0] = Move{}
+	if parent[0] != snapshot[0] {
+		t.Fatal("buffers leaked between searches")
+	}
+}
+
+func TestBufferedPerft(t *testing.T) {
+	b, _ := boardFromFEN(startFEN)
+	buffers := new(moveBuffers)
+	var count func(Board, int, int) uint64
+	count = func(b Board, depth, ply int) uint64 {
+		if depth == 0 {
+			return 1
+		}
+		var nodes uint64
+		for _, m := range buffers.generate(b, ply, false) {
+			next := b
+			next.makeMove(m)
+			nodes += count(next, depth-1, ply+1)
+		}
+		return nodes
+	}
+	if got := count(b, 4, 0); got != 197281 {
+		t.Fatalf("buffered perft got %d want 197281", got)
+	}
+}
+
+func TestBufferedTacticalMoves(t *testing.T) {
+	buffers := new(moveBuffers)
+	for _, fen := range []string{
+		"r6k/1P6/8/8/8/8/8/7K w - - 0 1",
+		"7k/8/8/3pP3/8/8/8/7K w - d6 0 1",
+		"7k/8/8/r4pPK/8/8/8/8 w - f6 0 1",
+		"1k4r1/8/8/8/8/8/5P1P/R4RK1 w - - 0 1",
+		startFEN,
+	} {
+		b, err := boardFromFEN(fen)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, tactical := range []bool{false, true} {
+			var want []Move
+			for _, m := range GenerateLegalMoves(b) {
+				if !tactical || !isQuietMove(b, m) {
+					want = append(want, m)
+				}
+			}
+			got := buffers.generate(b, 0, tactical)
+			if len(got) != len(want) {
+				t.Fatalf("got %d moves want %d", len(got), len(want))
+			}
+			for i := range got {
+				if got[i] != want[i] {
+					t.Fatal("buffered legal moves changed")
+				}
+			}
+		}
+	}
+}
+
+func BenchmarkBufferedMoveGeneration(b *testing.B) {
+	board, err := boardFromFEN(startFEN)
+	if err != nil {
+		b.Fatal(err)
+	}
+	buffers := new(moveBuffers)
+	buffers.generate(board, 0, false)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		buffers.generate(board, 0, false)
+	}
+}

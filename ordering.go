@@ -8,6 +8,7 @@ type moveHeuristics struct {
 	killers [128][2]Move
 	history [2][64][64]int
 	stats   *SearchInfo
+	buffers *moveBuffers
 }
 
 func isQuietMove(b Board, m Move) bool {

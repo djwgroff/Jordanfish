@@ -147,7 +147,7 @@ func search(b Board, depth, alpha, beta, ply int, table transpositionTable) (int
 
 func searchWithOrdering(b Board, depth, alpha, beta, ply int, table transpositionTable, heuristics *moveHeuristics) (int, Move, bool) {
 	if depth == 0 {
-		return quiescenceWithStats(b, alpha, beta, ply, 0, heuristics.stats), Move{}, false
+		return quiescenceBuffered(b, alpha, beta, ply, 0, heuristics.stats, heuristics.ensureBuffers()), Move{}, false
 	}
 	if heuristics.stats != nil {
 		heuristics.stats.Nodes++
@@ -161,7 +161,7 @@ func searchWithOrdering(b Board, depth, alpha, beta, ply int, table transpositio
 		}
 	}
 	originalAlpha, originalBeta := alpha, beta
-	moves := GenerateLegalMoves(b)
+	moves := heuristics.ensureBuffers().generate(b, ply, false)
 	if score, finished := terminalScore(b, moves, ply); finished {
 		return score, Move{}, false
 	}
@@ -234,13 +234,17 @@ func quiescence(b Board, alpha, beta, ply, extraPly int) int {
 }
 
 func quiescenceWithStats(b Board, alpha, beta, ply, extraPly int, stats *SearchInfo) int {
+	return quiescenceBuffered(b, alpha, beta, ply, extraPly, stats, new(moveBuffers))
+}
+
+func quiescenceBuffered(b Board, alpha, beta, ply, extraPly int, stats *SearchInfo, buffers *moveBuffers) int {
 	if stats != nil {
 		stats.Nodes++
 	}
 	inCheck := kingAttacked(b, b.colorToMove)
 	var moves []Move
 	if inCheck {
-		moves = GenerateLegalMoves(b)
+		moves = buffers.generate(b, ply, false)
 		if score, finished := terminalScore(b, moves, ply); finished {
 			return score
 		}
@@ -248,7 +252,7 @@ func quiescenceWithStats(b Board, alpha, beta, ply, extraPly int, stats *SearchI
 		if b.insufficientMaterial() || b.halfmove >= 150 {
 			return 0
 		}
-		moves = GenerateLegalTacticalMoves(b)
+		moves = buffers.generate(b, ply, true)
 		if len(moves) == 0 && !hasLegalMove(b) {
 			return 0
 		}
@@ -282,7 +286,7 @@ func quiescenceWithStats(b Board, alpha, beta, ply, extraPly int, stats *SearchI
 	for _, move := range moves {
 		next := b
 		next.makeMove(move)
-		score := quiescenceWithStats(next, alpha, beta, ply+1, extraPly+1, stats)
+		score := quiescenceBuffered(next, alpha, beta, ply+1, extraPly+1, stats, buffers)
 		if maximizing {
 			bestScore = max(bestScore, score)
 			alpha = max(alpha, bestScore)
