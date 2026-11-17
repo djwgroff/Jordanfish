@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func position(t *testing.T, fen string) Board {
@@ -616,7 +617,7 @@ func TestUCISearch(t *testing.T) {
 	if strings.Count(output, "bestmove d1d5\n") != 3 {
 		t.Fatal(output)
 	}
-	if strings.Count(output, "info depth 1\n") != 2 || strings.Count(output, "info depth 2\n") != 1 {
+	if strings.Count(output, "info depth 1 ") != 3 || strings.Count(output, "info depth 2 ") != 1 {
 		t.Fatal(output)
 	}
 	if !strings.Contains(output, "info string invalid position move nonsense\n") {
@@ -635,15 +636,16 @@ func TestUCISearch(t *testing.T) {
 
 func TestUCINewGame(t *testing.T) {
 	output := uciTranscript(t, "setoption name depth value 1\nposition startpos moves e2e4\nucinewgame\nisready\ngo wtime 100 btime 100\nquit\n")
-	if !strings.HasPrefix(output, "readyok\ninfo depth 1\n") {
+	if !strings.HasPrefix(output, "readyok\ninfo depth 1 ") {
 		t.Fatal(output)
 	}
 	b, _ := boardFromFEN(startFEN)
-	words := strings.Fields(output)
-	if len(words) != 6 || words[4] != "bestmove" {
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	words := strings.Fields(lines[len(lines)-1])
+	if len(words) != 2 || words[0] != "bestmove" {
 		t.Fatal(output)
 	}
-	if _, err := findMove(words[5], GenerateLegalMoves(b)); err != nil {
+	if _, err := findMove(words[1], GenerateLegalMoves(b)); err != nil {
 		t.Fatalf("new game did not reset board: %s", output)
 	}
 }
@@ -651,7 +653,7 @@ func TestUCINewGame(t *testing.T) {
 func TestUCIInvalidDepth(t *testing.T) {
 	input := "setoption name Depth value 1\nsetoption name Depth value 0\nsetoption name Depth value nope\nsetoption name Depth\ngo depth\ngo depth -1\ngo depth 65\ngo depth nope\nisready\ngo\nquit\n"
 	output := uciTranscript(t, input)
-	if strings.Count(output, "info string ") != 7 || strings.Count(output, "bestmove ") != 1 || !strings.Contains(output, "readyok\ninfo depth 1\n") {
+	if strings.Count(output, "info string ") != 7 || strings.Count(output, "bestmove ") != 1 || !strings.Contains(output, "readyok\ninfo depth 1 ") {
 		t.Fatal(output)
 	}
 }
@@ -1438,5 +1440,141 @@ func TestPassedPawnEvaluation(t *testing.T) {
 	evaluate(b)
 	if b != original {
 		t.Fatal("evaluation changed board")
+	}
+}
+
+func TestSearchStatistics(t *testing.T) {
+	for _, fen := range []string{startFEN, "k2r4/8/8/8/3Q4/8/8/7K b - - 0 1"} {
+		b, err := boardFromFEN(fen)
+		if err != nil {
+			t.Fatal(err)
+		}
+		original := b
+		var reports []SearchInfo
+		move, ok := Search(b, 3, func(info SearchInfo) { reports = append(reports, info) })
+		if !ok || len(reports) != 3 {
+			t.Fatal("missing completed depth reports")
+		}
+		previousNodes, previousTime := uint64(0), time.Duration(0)
+		for i, info := range reports {
+			if info.Depth != i+1 || info.Nodes <= previousNodes || info.Elapsed < previousTime || info.Elapsed <= 0 {
+				t.Fatal("incorrect depth or cumulative counters")
+			}
+			if len(info.PV) < 1 || len(info.PV) > info.Depth {
+				t.Fatal("invalid pv length")
+			}
+			position := b
+			for _, m := range info.PV {
+				legal, err := findMove(m.String(), GenerateLegalMoves(position))
+				if err != nil || legal != m {
+					t.Fatal("illegal pv move")
+				}
+				position.makeMove(m)
+			}
+			previousNodes, previousTime = info.Nodes, info.Elapsed
+		}
+		final := reports[len(reports)-1]
+		if final.PV[0] != move || final.Score != referenceScore(b, 3, 0) {
+			t.Fatal("reported score or pv disagrees with search")
+		}
+		plain, plainOK := BestMove(b, 3)
+		if plainOK != ok || plain != move {
+			t.Fatal("reporting changed search result")
+		}
+		if b != original {
+			t.Fatal("reporting changed board")
+		}
+		Search(b, 3, func(info SearchInfo) {
+			if info.Nodes != reports[info.Depth-1].Nodes {
+				t.Fatal("statistics did not reset")
+			}
+		})
+	}
+}
+
+func TestSearchNodeCounts(t *testing.T) {
+	b, _ := boardFromFEN(startFEN)
+	var info SearchInfo
+	Search(b, 1, func(report SearchInfo) { info = report })
+	if info.Nodes != 21 {
+		t.Fatalf("depth one has root plus twenty horizon nodes got %d", info.Nodes)
+	}
+	h := new(moveHeuristics)
+	h.stats = &SearchInfo{}
+	table := make(transpositionTable)
+	searchWithOrdering(b, 1, -infinity, infinity, 0, table, h)
+	before := h.stats.Nodes
+	searchWithOrdering(b, 1, -infinity, infinity, 0, table, h)
+	if h.stats.Nodes != before+1 {
+		t.Fatal("cached visit should count one node")
+	}
+	b, _ = boardFromFEN("7k/8/8/3q4/8/8/8/K2R4 w - - 0 1")
+	h.stats = &SearchInfo{}
+	searchWithOrdering(b, 0, -infinity, infinity, 0, nil, h)
+	if h.stats.Nodes <= 1 {
+		t.Fatal("quiescence descendants were not counted")
+	}
+}
+
+func TestSearchStatisticsTerminal(t *testing.T) {
+	b, _ := boardFromFEN("7k/6Q1/5K2/8/8/8/8/8 b - - 0 1")
+	var reports []SearchInfo
+	_, ok := Search(b, 3, func(info SearchInfo) { reports = append(reports, info) })
+	if ok || len(reports) != 1 || reports[0].Nodes != 1 || reports[0].Score != mateScore || len(reports[0].PV) != 0 {
+		t.Fatal("incorrect terminal report")
+	}
+	Search(b, 0, func(SearchInfo) { t.Fatal("invalid depth should not report an iteration") })
+}
+
+func TestUCISearchInfoFormat(t *testing.T) {
+	move, _ := parseMove("e2e4")
+	for _, tc := range []struct {
+		color Piece
+		score int
+		want  string
+	}{
+		{White, 123, "cp 123"},
+		{Black, 123, "cp -123"},
+		{White, mateScore - 1, "mate 1"},
+		{Black, -mateScore + 3, "mate 2"},
+		{White, -mateScore + 4, "mate -2"},
+		{Black, mateScore, "mate 0"},
+	} {
+		var out bytes.Buffer
+		writeSearchInfo(&out, tc.color, SearchInfo{Depth: 3, Score: tc.score, Nodes: 2000, Elapsed: 2 * time.Second, PV: []Move{move}})
+		want := "info depth 3 score " + tc.want + " nodes 2000 time 2000 nps 1000 pv e2e4\n"
+		if out.String() != want {
+			t.Fatalf("got %q want %q", out.String(), want)
+		}
+	}
+	if (SearchInfo{}).NPS() != 0 {
+		t.Fatal("zero elapsed time should not divide by zero")
+	}
+	if (SearchInfo{Nodes: 100, Elapsed: 500 * time.Microsecond}).NPS() != 200000 {
+		t.Fatal("submillisecond nps should use precise elapsed time")
+	}
+}
+
+func TestUCIStatisticsPerIteration(t *testing.T) {
+	output := uciTranscript(t, "position startpos\ngo depth 3\nquit\n")
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	if len(lines) != 4 {
+		t.Fatal(output)
+	}
+	for i, line := range lines[:3] {
+		words := strings.Fields(line)
+		if len(words) < 14 || words[0] != "info" || words[1] != "depth" || words[2] != string(rune('1'+i)) {
+			t.Fatal(line)
+		}
+		for _, field := range []string{" score ", " nodes ", " time ", " nps ", " pv "} {
+			if !strings.Contains(line, field) {
+				t.Fatalf("missing %s in %s", field, line)
+			}
+		}
+	}
+	best := strings.Fields(lines[3])
+	finalPV := strings.Split(lines[2], " pv ")[1]
+	if len(best) != 2 || best[0] != "bestmove" || best[1] != strings.Fields(finalPV)[0] {
+		t.Fatal(output)
 	}
 }

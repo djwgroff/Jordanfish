@@ -69,8 +69,9 @@ func runUCI(input io.Reader, output io.Writer) error {
 				fmt.Fprintln(output, "info string", depthErr)
 				continue
 			}
-			fmt.Fprintln(output, "info depth", searchDepth)
-			move, ok := BestMove(b, searchDepth)
+			move, ok := Search(b, searchDepth, func(info SearchInfo) {
+				writeSearchInfo(output, b.colorToMove, info)
+			})
 			if ok {
 				fmt.Fprintln(output, "bestmove", move)
 			} else {

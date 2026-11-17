@@ -1,27 +1,22 @@
 # Jordanfish
 
-A chess engine.
-Uses minimax search with alpha-beta pruning to find the best moves. Includes move ordering, position evaluation, and caching to improve search efficiency. Iterative deepening progressively searches deeper to improve move ordering.
+A Go chess engine with UCI support.
 
-UCI supports `uci`, `isready`, `ucinewgame`, `position startpos` or `position fen`
-with an optional `moves` list, `setoption name Depth value N`, `go depth N`, and
-`quit`. Depth defaults to 6 and accepts 1–64.
+- Minimax with alpha-beta pruning, iterative deepening, and quiescence search
+- Transposition table, killer moves, and history ordering
+- Piece-square tables, endgame king evaluation, and pawn structure evaluation
+- UCI reports for depth, score, nodes, time, NPS, and principal variation
 
-Enter moves as `e2e4`. Use `e1g1` / `e1c1` for White's castling and `e8g8` /
-`e8c8` for Black's. Promotions require a suffix: `q`, `r`, `b`, or `n`, such as
-`a7a8q`. Coordinates stay the same when the board rotates.
+Build and test:
 
-Commands:
+```sh
+go build .
+go test ./...
+```
 
-- `engine [depth]`: have the engine play the current side's move. Depth defaults
-  to 3 plies (range 1–6); higher depths take longer. To play White against the
-  engine, enter your move, then `engine` for Black's reply.
-- `quit`: exit; `resign`: concede the game.
-- `draw`: offer a draw, then play your move. Your opponent can accept with `draw`
-  or decline by playing a move.
-- `claim`: claim an available threefold-repetition or fifty-move draw.
-- `claim <move>`: claim a draw that your intended legal move would produce.
+Select the executable in Cute Chess using UCI. Search defaults to depth 6.
+Time management and interruptible search are not supported.
 
-Checkmate, stalemate, common insufficient-material positions, fivefold repetition,
-and the seventy-five-move rule end the game automatically. Invalid input is
-rejected; end-of-input exits cleanly.
+For terminal play, run `go run . -cli`. Enter moves like `e2e4` or `a7a8q`.
+Use `engine [depth]` for an engine move, `draw` to offer or accept a draw,
+`claim [move]` to claim a draw, and `resign` or `quit` to finish.

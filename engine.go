@@ -1,5 +1,7 @@
 package main
 
+import "time"
+
 const (
 	mateScore           = 1_000_000
 	infinity            = 1_000_000_000
@@ -101,14 +103,32 @@ func pawnPenalty(files [8]int) int {
 // returns no move for an invalid depth or a finished position
 // search ignores repetition history and optional draw claims
 func BestMove(b Board, depth int) (Move, bool) {
+	return Search(b, depth, nil)
+}
+
+func Search(b Board, depth int, report func(SearchInfo)) (Move, bool) {
 	if depth < 1 {
 		return Move{}, false
 	}
 	table := make(transpositionTable)
 	heuristics := new(moveHeuristics)
+	var info SearchInfo
+	if report != nil {
+		heuristics.stats = &info
+	}
+	start := time.Now()
 	var best Move
 	for currentDepth := 1; currentDepth <= depth; currentDepth++ {
-		_, move, ok := searchWithOrdering(b, currentDepth, -infinity, infinity, 0, table, heuristics)
+		score, move, ok := searchWithOrdering(b, currentDepth, -infinity, infinity, 0, table, heuristics)
+		if report != nil {
+			info.Depth, info.Score = currentDepth, score
+			info.PV = nil
+			if ok {
+				info.PV = principalVariation(b, move, currentDepth, table)
+			}
+			info.Elapsed = time.Since(start)
+			report(info)
+		}
 		if !ok {
 			return Move{}, false
 		}
@@ -127,7 +147,10 @@ func search(b Board, depth, alpha, beta, ply int, table transpositionTable) (int
 
 func searchWithOrdering(b Board, depth, alpha, beta, ply int, table transpositionTable, heuristics *moveHeuristics) (int, Move, bool) {
 	if depth == 0 {
-		return quiescence(b, alpha, beta, ply, 0), Move{}, false
+		return quiescenceWithStats(b, alpha, beta, ply, 0, heuristics.stats), Move{}, false
+	}
+	if heuristics.stats != nil {
+		heuristics.stats.Nodes++
 	}
 	key := tableKey(b)
 	entry, cached := table[key]
@@ -207,6 +230,13 @@ func terminalScore(b Board, moves []Move, ply int) (int, bool) {
 const maxQuiescencePly = 16
 
 func quiescence(b Board, alpha, beta, ply, extraPly int) int {
+	return quiescenceWithStats(b, alpha, beta, ply, extraPly, nil)
+}
+
+func quiescenceWithStats(b Board, alpha, beta, ply, extraPly int, stats *SearchInfo) int {
+	if stats != nil {
+		stats.Nodes++
+	}
 	moves := GenerateLegalMoves(b)
 	if score, finished := terminalScore(b, moves, ply); finished {
 		return score
@@ -244,7 +274,7 @@ func quiescence(b Board, alpha, beta, ply, extraPly int) int {
 		}
 		next := b
 		next.makeMove(move)
-		score := quiescence(next, alpha, beta, ply+1, extraPly+1)
+		score := quiescenceWithStats(next, alpha, beta, ply+1, extraPly+1, stats)
 		if maximizing {
 			bestScore = max(bestScore, score)
 			alpha = max(alpha, bestScore)
